@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    # 元数据库（存语义模型/字段/指标/术语，固定用 MySQL）
+    url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+# 可插拔的业务数据执行引擎配置
+datapilot:
+  engine:
+    # 业务数据引擎类型：mysql / starrocks，切换这里即可
+    type: mysql
+    # type=starrocks 时，改用下面这套（StarRocks 兼容 MySQL 协议，用同一个 JDBC 驱动）
+    # url: jdbc:mysql://localhost:9030/data_agent?useUnicode=true&characterEncoding=utf8
+    # username: root
+    # password: ""
+
+  llm:
+    base-url: https://api.deepseek.com
+    api-key: ${DEEPSEEK_API_KEY:sk-在这里填你的key}
+    model: deepseek-chat
