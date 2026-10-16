@@ -122,11 +122,12 @@
 通过配置项切换 LLM（DeepSeek / Qwen），不引模型注册表，够用即可。
 
 ### 4.11 Agent 可观测性 / AgentOps（P1，差异化新增）
-DataAgent 未显式提供，本项目自研轻量 AgentOps，把 Agent 运行过程"数据化"，支撑成本统计、失败定位与质量评估：
+借鉴开源项目 AgentOps-AI/agentops 的 span 层级模型，自研轻量落地（Java 栈不引其 Python SDK），把 Agent 运行过程"数据化"，支撑成本统计、失败定位与质量评估：
 
-- **链路追踪（Trace）**：每次问数生成唯一 `traceId`，贯穿 7 个节点；每个节点落一条明细（输入/输出/耗时/token/状态）。
-- **成本观测**：统计每次 LLM 调用的 token 消耗与延迟，聚合到 run 级，能回答"这个 Agent 一次问数花多少钱、慢在哪"。
-- **失败定位与重放**：SQL 校验拦截 / 执行报错，能定位到具体节点与原因，支撑回溯与改进 prompt。
+- **链路追踪（Trace / span 层级）**：每次问数生成唯一 `traceId`，贯穿 7 个节点；每个节点落一条明细，用 `span_type` 区分 operation（节点）/ llm（LLM调用）/ sql（SQL执行）/ vector（向量召回）。
+- **成本观测（workflow pricing）**：统计每次 LLM 调用的 token 消耗与延迟，聚合到 run 级成本，能回答"这个 Agent 一次问数花多少钱、慢在哪"。
+- **失败定位与回放（session replay）**：SQL 校验拦截 / 执行报错，能定位到具体节点与原因；trace 完整记录每步 input/output，支持失败回溯与重放。
+- **蜜罐 / 注入检测（honeypot）**：表名白名单之外的"蜜罐表"一旦被引用即拦截，同时暴露幻觉与提示注入。
 
 ---
 

@@ -23,7 +23,7 @@
 | Agent 编排 | 手写状态机 | 借鉴 StateGraph 思想，讲得深、依赖最少 |
 | HTTP 客户端 | RestClient | Spring 6 内置，无需额外依赖 |
 | 前端 | 极简 HTML | 演示够用，不铺 Nuxt |
-| Agent 可观测性 | 自研轻量 AgentOps（run/step 两表 + traceId） | 差异化亮点；数据侧自研比调 Langfuse SDK 更能讲深 |
+| Agent 可观测性 | 自研轻量 AgentOps（对齐 AgentOps-AI/agentops span 层级） | 差异化亮点；Java 栈自研比引 Python SDK 更能讲深 |
 
 **与 DataAgent 选型对照**：DataAgent 用 Spring AI Alibaba + StateGraph + 向量库 + Python 沙盒 + Nuxt 前端；DataPilot 用 Spring Boot 裸框架 + 手写状态机 + Milvus 向量检索（同款）+ 结果解释（替代沙盒）+ 极简 HTML（替代 Nuxt）。同款保留：Java 17 / Spring Boot 3.4.8 / MySQL / DeepSeek / 向量检索。核心差异：砍掉"重工程"（Python 沙盒/MCP/API Key），保留"重数据 + 重检索"（语义层/口径/SQL 治理/RAG）。
 
@@ -138,11 +138,25 @@ public interface SqlExecutor {
 - **选 Milvus 而非 PGVector/ES**：Milvus 是专业向量库标杆（面试知名度高），向量索引（HNSW/IVF）成熟；PGVector 要引 PostgreSQL、与现有 MySQL 两套库；ES 的向量检索是后加能力。Milvus Standalone 一个 Docker Compose 即起，Java SDK（milvus-sdk-java）成熟。
 - **Embedding 用 OpenAI 兼容接口**（Qwen text-embedding-v3），与 LLM 客户端同一套调用方式，可切换。
 
-### 5.6 为什么 AgentOps 自研轻量，不引 Langfuse
-- **定位一致**：Agent 可观测的本质是"把运行过程数据化 + 落库 + 可查询"，这正是数据侧的看家本领——trace 就是一张"Agent 运行事实表"，和数仓事实表同一个思想。
-- **5 天可落地**：Langfuse 要额外部署服务 + 引 SDK + 配采集，链路更长；自研只需两张表（`agent_run`/`agent_step`）+ traceId 埋点 + 一个查询接口。
-- **能讲得深**：自己实现 traceId 贯穿 + span 级埋点 + token 统计，能说清"可观测性到底观测什么"，比"我调了 Langfuse SDK"高一个量级。
-- **面试话术**：「我给 Agent 加了 AgentOps 可观测层，把每次运行过程数据化成 trace + span，支撑成本统计、失败定位和质量评估」——这是 2025 AI 应用最热的加分点，且和数仓背景无缝衔接。
+### 5.6 AgentOps 设计：对齐 AgentOps-AI/agentops 的 span 层级模型
+本项目借鉴开源项目 AgentOps-AI/agentops（AI Agent 可观测性标杆）的核心概念，自研轻量落地，而不是直接引其 Python SDK——因为 DataPilot 是 Java 栈，且数据侧自研能讲得更深。
+
+**对齐的核心：span 层级模型。** AgentOps 把一次运行拆成 Session → Workflow → Agent → Operation → Event 五层。DataPilot 映射成两层存储，用 `span_type` 表达层级：
+
+| AgentOps 概念 | DataPilot 落地 | 说明 |
+|---|---|---|
+| Session（根） | `agent_run` | 一次问数一条 |
+| Operation（节点） | `agent_step` + `span_type=operation` | 7 个节点 |
+| Event（底层动作） | `agent_step` + `span_type=llm/sql/vector` | LLM 调用 / SQL 执行 / 向量召回 |
+
+**借鉴的四个能力（都是面试亮点）：**
+
+1. **成本管理（workflow pricing）**：AgentOps 会给一次 Agent 运行"定价"。DataPilot 在 `agent_run` 存 `total_cost`（token × 单价），能回答"这个 Agent 一次问数花多少钱"。
+2. **失败回放（session replay）**：AgentOps 招牌是 2 行代码回放 session。DataPilot 的 trace 完整记录每步 input/output，天然支持失败回溯与重放。
+3. **蜜罐 / 注入检测（honeypot）**：AgentOps 用 PromptArmor 做提示注入检测。DataPilot 的「表名白名单校验」就是同源思想——未登记的"蜜罐表名"一旦被 LLM 生成的 SQL 引用，立即拦截，同时暴露幻觉与注入。
+4. **跨 session 指标（summary analytics）**：`agent_run` 按天聚合 token 成本、成功率、平均耗时，即 AgentOps 概览面板的雏形。
+
+**为什么不直接引 AgentOps SDK**：它是 Python SDK，DataPilot 是 Java 栈；且引 SDK 只能"会用"，自研能把"可观测性到底观测什么"讲清，和数仓「事实表」思想无缝咬合。
 
 ---
 

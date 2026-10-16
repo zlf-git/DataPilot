@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS agent_run (
     status           VARCHAR(16) COMMENT '运行状态：SUCCESS/FAILED/REJECTED',
     total_latency_ms BIGINT COMMENT '端到端总耗时(ms)',
     total_tokens     INT COMMENT 'LLM 总 token 消耗',
+    total_cost       DECIMAL(10,6) COMMENT '单次问数 LLM 总成本(元)，对应 AgentOps 工作流定价',
     final_sql        TEXT COMMENT '最终执行的 SQL',
     error_msg        VARCHAR(500) COMMENT '失败原因',
     start_time       DATETIME COMMENT '开始时间',
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS agent_step (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
     trace_id   VARCHAR(64) NOT NULL COMMENT '所属 trace',
     step_name  VARCHAR(64) COMMENT '节点名：rewrite/recall/generate/validate/execute/explain',
+    span_type  VARCHAR(16) COMMENT 'span类型：operation(节点)/llm(LLM调用)/sql(SQL执行)/vector(向量召回)',
     step_order INT COMMENT '执行顺序',
     status     VARCHAR(16) COMMENT '节点状态：SUCCESS/FAILED/SKIPPED',
     latency_ms BIGINT COMMENT '节点耗时(ms)',
@@ -93,4 +95,4 @@ CREATE TABLE IF NOT EXISTS agent_step (
     start_time DATETIME COMMENT '开始时间',
     end_time   DATETIME COMMENT '结束时间',
     KEY idx_trace (trace_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AgentOps：节点执行明细';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AgentOps：span 执行明细（对齐 AgentOps span 层级）';
