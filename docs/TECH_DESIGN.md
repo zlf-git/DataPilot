@@ -22,6 +22,8 @@
 | HTTP 客户端 | RestClient | Spring 6 内置，无需额外依赖 |
 | 前端 | 极简 HTML | 演示够用，不铺 Nuxt |
 
+**与 DataAgent 选型对照**：DataAgent 用 Spring AI Alibaba + StateGraph + 向量库 + Python 沙盒 + Nuxt 前端；DataPilot 用 Spring Boot 裸框架 + 手写状态机 + SQL 匹配（替代向量库）+ 结果解释（替代沙盒）+ 极简 HTML（替代 Nuxt）。同款保留：Java 17 / Spring Boot 3.4.8 / MySQL / DeepSeek。核心差异：砍掉"重工程"（沙盒/向量库/MCP），保留"重数据"（语义层/口径/SQL 治理）。
+
 ---
 
 ## 2. 架构总览
@@ -126,6 +128,10 @@ public interface SqlExecutor {
 - 安全第一：只读白名单 + 表白名单 + LIMIT，在 LLM 生成 SQL 后、执行前拦截。
 - 对应 PRD 的核心痛点"裸调 LLM 生成的 SQL 越权/注入"，校验器是这道防线。
 
+### 5.5 为什么 RAG 用 SQL 匹配，不引向量库
+- DataAgent 的 RAG 用向量数据库做语义检索，但首版数据量小（几十张表），关键词 + LIKE 匹配已够用。
+- 引向量库（Milvus/PGVector）增加部署复杂度，5 天周期不值。接口上预留 Embedding 检索扩展点，数据量上来再换。
+
 ---
 
 ## 6. 数据模型（元数据 4 表 + 业务样例表）
@@ -136,6 +142,7 @@ public interface SqlExecutor {
 | `field_metadata` | 字段 + 枚举 | table_name, field_name, field_comment, enum_values |
 | `metric_def` | 指标口径（只定义一次） | metric_name, definition |
 | `term_dict` | 业务术语同义词 | term, field_ref |
+| `few_shot_example` | 问题-SQL 示例对（智能体知识） | question, sql, biz_domain |
 | `orders` | 业务样例表（演示用） | order_id, channel, sku_id, amount, status, order_time |
 
 完整 DDL 见 `src/main/resources/schema.sql`。

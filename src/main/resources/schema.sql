@@ -42,7 +42,16 @@ CREATE TABLE IF NOT EXISTS term_dict (
     UNIQUE KEY uk_term (term)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='业务术语同义词';
 
--- 5. 订单表（简化版，供 Text2SQL 查询演示）
+-- 5. few-shot 示例表：问题-SQL 示例对（智能体知识，提升 NL2SQL 准确率）
+CREATE TABLE IF NOT EXISTS few_shot_example (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    question   VARCHAR(500) NOT NULL COMMENT '示例问题，如 上月各渠道销售额',
+    sql        TEXT NOT NULL COMMENT '对应的正确 SQL',
+    biz_domain VARCHAR(64) COMMENT '业务域：交易/渠道/商品/用户',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体知识：few-shot 示例';
+
+-- 6. 订单表（简化版，供 Text2SQL 查询演示）
 CREATE TABLE IF NOT EXISTS orders (
     order_id   BIGINT PRIMARY KEY COMMENT '订单ID',
     channel    VARCHAR(32) COMMENT '渠道：01抖音/02天猫/03京东',
