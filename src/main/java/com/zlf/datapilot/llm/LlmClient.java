@@ -10,7 +10,7 @@ public interface LlmClient {
      *
      * @param systemPrompt 系统提示词（角色、约束）
      * @param userPrompt   用户提示词（问题 + 元数据上下文）
-     * @return 模型返回的文本
+     * @return 模型返回的文本 + token 用量（AgentOps 成本统计依赖 token）
      */
-    String chat(String systemPrompt, String userPrompt);
+    ChatResult chat(String systemPrompt, String userPrompt);
 }

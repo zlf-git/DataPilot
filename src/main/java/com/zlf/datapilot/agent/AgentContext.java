@@ -1,5 +1,8 @@
 package com.zlf.datapilot.agent;
 
+import com.zlf.datapilot.knowledge.model.RecalledMetadata;
+import com.zlf.datapilot.sql.ValidationResult;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +13,12 @@ import java.util.Map;
  */
 public class AgentContext {
 
+    /** 链路追踪 ID（一次 ask 一个，AgentEngine 入口生成） */
+    private String traceId;
+
+    /** 会话 ID（多轮对话） */
+    private String sessionId;
+
     /** 用户原始问题 */
     private String userQuestion;
 
@@ -19,11 +28,17 @@ public class AgentContext {
     /** 召回的相关表名 */
     private List<String> relatedTables = new ArrayList<>();
 
+    /** 召回的完整元数据（DDL/字段/指标/术语/few-shot） */
+    private RecalledMetadata recalledMetadata = new RecalledMetadata();
+
     /** 组装好的 Prompt */
     private String prompt;
 
     /** 生成的 SQL */
     private String generatedSql;
+
+    /** SQL 校验结果 */
+    private ValidationResult validationResult;
 
     /** SQL 查询结果 */
     private List<Map<String, Object>> queryResult = new ArrayList<>();
@@ -33,6 +48,28 @@ public class AgentContext {
 
     /** 建议的图表类型：bar/line/pie/table/card */
     private String chartType = "table";
+
+    /** 生成的 HTML 报告（P1） */
+    private String reportHtml;
+
+    /** 失败信息（任一节点失败时） */
+    private String errorMessage;
+
+    public String getTraceId() {
+        return traceId;
+    }
+
+    public void setTraceId(String traceId) {
+        this.traceId = traceId;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
 
     public String getUserQuestion() {
         return userQuestion;
@@ -58,6 +95,14 @@ public class AgentContext {
         this.relatedTables = relatedTables;
     }
 
+    public RecalledMetadata getRecalledMetadata() {
+        return recalledMetadata;
+    }
+
+    public void setRecalledMetadata(RecalledMetadata recalledMetadata) {
+        this.recalledMetadata = recalledMetadata;
+    }
+
     public String getPrompt() {
         return prompt;
     }
@@ -72,6 +117,14 @@ public class AgentContext {
 
     public void setGeneratedSql(String generatedSql) {
         this.generatedSql = generatedSql;
+    }
+
+    public ValidationResult getValidationResult() {
+        return validationResult;
+    }
+
+    public void setValidationResult(ValidationResult validationResult) {
+        this.validationResult = validationResult;
     }
 
     public List<Map<String, Object>> getQueryResult() {
@@ -96,5 +149,21 @@ public class AgentContext {
 
     public void setChartType(String chartType) {
         this.chartType = chartType;
+    }
+
+    public String getReportHtml() {
+        return reportHtml;
+    }
+
+    public void setReportHtml(String reportHtml) {
+        this.reportHtml = reportHtml;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public void setErrorMessage(String errorMessage) {
+        this.errorMessage = errorMessage;
     }
 }

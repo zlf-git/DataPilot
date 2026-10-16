@@ -3,23 +3,44 @@ server:
 
 spring:
   datasource:
-    # 元数据库（存语义模型/字段/指标/术语，固定用 MySQL）
+    # 元数据库（存语义模型/字段/指标/术语/few-shot/AgentOps，固定用 MySQL）
     url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: root
     driver-class-name: com.mysql.cj.jdbc.Driver
 
-# 可插拔的业务数据执行引擎配置
 datapilot:
+  # 可插拔的业务数据执行引擎（数据源轴）
   engine:
     # 业务数据引擎类型：mysql / starrocks，切换这里即可
     type: mysql
+    url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root
     # type=starrocks 时，改用下面这套（StarRocks 兼容 MySQL 协议，用同一个 JDBC 驱动）
     # url: jdbc:mysql://localhost:9030/data_agent?useUnicode=true&characterEncoding=utf8
     # username: root
     # password: ""
 
+  # LLM（OpenAI 兼容，默认 DeepSeek 非推理模型，无 think 污染）
   llm:
     base-url: https://api.deepseek.com
     api-key: ${DEEPSEEK_API_KEY:sk-在这里填你的key}
     model: deepseek-chat
+
+  # Embedding（OpenAI 兼容，Qwen text-embedding-v3，1024 维）
+  embedding:
+    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api-key: ${QWEN_API_KEY:sk-在这里填你的key}
+    model: text-embedding-v3
+
+  # Milvus 向量库（enabled=false 时 Recaller 降级纯关键词召回）
+  milvus:
+    enabled: false
+    host: localhost
+    port: 19530
+
+  # LLM 成本单价（元/百万 token），AgentOps 成本计算用，可按实际价格调整
+  cost:
+    input-price-per-million: 1.0
+    output-price-per-million: 2.0
