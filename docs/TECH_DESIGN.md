@@ -23,6 +23,7 @@
 | Agent 编排 | 手写状态机 | 借鉴 StateGraph 思想，讲得深、依赖最少 |
 | HTTP 客户端 | RestClient | Spring 6 内置，无需额外依赖 |
 | 前端 | 极简 HTML | 演示够用，不铺 Nuxt |
+| Agent 可观测性 | 自研轻量 AgentOps（run/step 两表 + traceId） | 差异化亮点；数据侧自研比调 Langfuse SDK 更能讲深 |
 
 **与 DataAgent 选型对照**：DataAgent 用 Spring AI Alibaba + StateGraph + 向量库 + Python 沙盒 + Nuxt 前端；DataPilot 用 Spring Boot 裸框架 + 手写状态机 + Milvus 向量检索（同款）+ 结果解释（替代沙盒）+ 极简 HTML（替代 Nuxt）。同款保留：Java 17 / Spring Boot 3.4.8 / MySQL / DeepSeek / 向量检索。核心差异：砍掉"重工程"（Python 沙盒/MCP/API Key），保留"重数据 + 重检索"（语义层/口径/SQL 治理/RAG）。
 
@@ -50,6 +51,7 @@ graph LR
     S2 -.查.-> META[(元数据库 MySQL)]
     S2 -.向量召回.-> VEC[(Milvus 向量库)]
     S6 -.查.-> BUS[(业务库 MySQL/StarRocks)]
+    O -.埋点 trace/token.-> TRACE[(AgentOps 运行库 MySQL)]
 ```
 
 **一句话**：Controller 收问题 → 状态机串 7 个节点 → 节点间通过 `AgentContext` 传递状态 → 执行结果经 LLM 解释后返回。
@@ -136,9 +138,15 @@ public interface SqlExecutor {
 - **选 Milvus 而非 PGVector/ES**：Milvus 是专业向量库标杆（面试知名度高），向量索引（HNSW/IVF）成熟；PGVector 要引 PostgreSQL、与现有 MySQL 两套库；ES 的向量检索是后加能力。Milvus Standalone 一个 Docker Compose 即起，Java SDK（milvus-sdk-java）成熟。
 - **Embedding 用 OpenAI 兼容接口**（Qwen text-embedding-v3），与 LLM 客户端同一套调用方式，可切换。
 
+### 5.6 为什么 AgentOps 自研轻量，不引 Langfuse
+- **定位一致**：Agent 可观测的本质是"把运行过程数据化 + 落库 + 可查询"，这正是数据侧的看家本领——trace 就是一张"Agent 运行事实表"，和数仓事实表同一个思想。
+- **5 天可落地**：Langfuse 要额外部署服务 + 引 SDK + 配采集，链路更长；自研只需两张表（`agent_run`/`agent_step`）+ traceId 埋点 + 一个查询接口。
+- **能讲得深**：自己实现 traceId 贯穿 + span 级埋点 + token 统计，能说清"可观测性到底观测什么"，比"我调了 Langfuse SDK"高一个量级。
+- **面试话术**：「我给 Agent 加了 AgentOps 可观测层，把每次运行过程数据化成 trace + span，支撑成本统计、失败定位和质量评估」——这是 2025 AI 应用最热的加分点，且和数仓背景无缝衔接。
+
 ---
 
-## 6. 数据模型（元数据 4 表 + 业务样例表）
+## 6. 数据模型（元数据 5 表 + AgentOps 2 表 + 业务样例表）
 
 | 表 | 作用 | 关键字段 |
 |---|---|---|
@@ -147,6 +155,8 @@ public interface SqlExecutor {
 | `metric_def` | 指标口径（只定义一次） | metric_name, definition |
 | `term_dict` | 业务术语同义词 | term, field_ref |
 | `few_shot_example` | 问题-SQL 示例对（智能体知识） | question, sql, biz_domain |
+| `agent_run` | AgentOps：一次问数运行记录 | trace_id, status, total_latency_ms, total_tokens, final_sql |
+| `agent_step` | AgentOps：每个节点执行明细 | trace_id, step_name, step_order, latency_ms, token_used, status |
 | `orders` | 业务样例表（演示用） | order_id, channel, sku_id, amount, status, order_time |
 
 完整 DDL 见 `src/main/resources/schema.sql`。
@@ -160,6 +170,7 @@ public interface SqlExecutor {
 | POST | `/api/ask` | 问数：`{"question":"上月销售额是多少","sessionId":"可选"}` |
 | GET | `/api/tables` | 列出已登记的语义模型表 |
 | POST | `/api/metadata` | 数据管理员维护元数据（表/字段/指标/术语） |
+| GET | `/api/traces` | AgentOps：查询历史运行记录（trace 列表 + 节点明细） |
 
 返回结构：
 ```json

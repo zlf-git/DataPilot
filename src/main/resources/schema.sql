@@ -1,6 +1,6 @@
 -- ============================================================
 -- DataPilot 建表脚本（借鉴 DataAgent 的语义模型思想）
--- 4 张元数据表 + 1 张业务样例表
+-- 5 张元数据表 + 2 张 AgentOps 表 + 1 张业务样例表
 -- ============================================================
 
 -- 1. 语义模型表：每张业务表一行，描述「这张表是什么」
@@ -60,3 +60,37 @@ CREATE TABLE IF NOT EXISTS orders (
     status     TINYINT COMMENT '状态：1待支付/2已支付/3已退款',
     order_time DATETIME COMMENT '下单时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单表（演示用）';
+
+-- 7. AgentOps 运行记录表：一次问数一条（trace）
+CREATE TABLE IF NOT EXISTS agent_run (
+    id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+    trace_id         VARCHAR(64) NOT NULL COMMENT '链路追踪ID，一次ask一个',
+    session_id       VARCHAR(64) COMMENT '会话ID（多轮）',
+    question         VARCHAR(500) COMMENT '用户原始问题',
+    status           VARCHAR(16) COMMENT '运行状态：SUCCESS/FAILED/REJECTED',
+    total_latency_ms BIGINT COMMENT '端到端总耗时(ms)',
+    total_tokens     INT COMMENT 'LLM 总 token 消耗',
+    final_sql        TEXT COMMENT '最终执行的 SQL',
+    error_msg        VARCHAR(500) COMMENT '失败原因',
+    start_time       DATETIME COMMENT '开始时间',
+    end_time         DATETIME COMMENT '结束时间',
+    KEY idx_trace (trace_id),
+    KEY idx_session (session_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AgentOps：一次问数运行记录';
+
+-- 8. AgentOps 节点明细表：每个节点一条（span）
+CREATE TABLE IF NOT EXISTS agent_step (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    trace_id   VARCHAR(64) NOT NULL COMMENT '所属 trace',
+    step_name  VARCHAR(64) COMMENT '节点名：rewrite/recall/generate/validate/execute/explain',
+    step_order INT COMMENT '执行顺序',
+    status     VARCHAR(16) COMMENT '节点状态：SUCCESS/FAILED/SKIPPED',
+    latency_ms BIGINT COMMENT '节点耗时(ms)',
+    input      TEXT COMMENT '节点输入摘要',
+    output     TEXT COMMENT '节点输出摘要',
+    token_used INT COMMENT '该节点 LLM token 消耗',
+    error_msg  VARCHAR(500) COMMENT '节点失败原因',
+    start_time DATETIME COMMENT '开始时间',
+    end_time   DATETIME COMMENT '结束时间',
+    KEY idx_trace (trace_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AgentOps：节点执行明细';

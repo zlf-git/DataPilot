@@ -65,6 +65,7 @@
 | 多模型调度（模型注册表） | 配置项切换 LLM（DeepSeek/Qwen） | 🟡 简化 |
 | MCP 服务器 | 不做 | ❌ 砍 |
 | API Key 管理 | 不做 | ❌ 砍 |
+| AgentOps 可观测性（Trace / 成本 / 失败定位） | 自研轻量 AgentOps（traceId + token 埋点） | ✨ 差异化新增 |
 
 **借鉴重点**：Text2SQL 编排思想 + 知识三层 + 报告生成；**砍掉**：需 Docker 沙盒 / 企业级权限的重特性。
 
@@ -120,6 +121,13 @@
 ### 4.10 多模型切换（P2，借鉴 DataAgent 轻量版）
 通过配置项切换 LLM（DeepSeek / Qwen），不引模型注册表，够用即可。
 
+### 4.11 Agent 可观测性 / AgentOps（P1，差异化新增）
+DataAgent 未显式提供，本项目自研轻量 AgentOps，把 Agent 运行过程"数据化"，支撑成本统计、失败定位与质量评估：
+
+- **链路追踪（Trace）**：每次问数生成唯一 `traceId`，贯穿 7 个节点；每个节点落一条明细（输入/输出/耗时/token/状态）。
+- **成本观测**：统计每次 LLM 调用的 token 消耗与延迟，聚合到 run 级，能回答"这个 Agent 一次问数花多少钱、慢在哪"。
+- **失败定位与重放**：SQL 校验拦截 / 执行报错，能定位到具体节点与原因，支撑回溯与改进 prompt。
+
 ---
 
 ## 5. 非功能需求
@@ -130,6 +138,7 @@
 | 性能 | 单次问数响应可接受（不含 LLM 时间，SQL 执行秒级） |
 | 可维护性 | 元数据与业务数据分离，节点职责单一 |
 | 可扩展性 | 新增引擎/新增节点不改主链路 |
+| 可观测性 | 每次问数可追踪（trace）、可算成本（token）、可定位失败（节点级） |
 
 ---
 
@@ -141,9 +150,10 @@
 - 智能报告生成：ECharts HTML/Markdown（借鉴「智能报告」）
 - RAG 语义检索：Milvus 向量库 + Embedding 召回（借鉴「RAG 检索增强」）
 - 多模型配置切换、可插拔数据源、单机部署
+- AgentOps 可观测：trace 追踪 + token 成本 + 失败定位（差异化亮点）
 
 **首版不做（后续可加）：**
-- Python 沙盒深度分析（需 Docker）、MCP 服务器、Human-in-the-loop 完整版、API Key 管理、多租户、完整权限体系、Nuxt 前端。
+- Python 沙盒深度分析（需 Docker）、MCP 服务器、Human-in-the-loop 完整版、API Key 管理、多租户、完整权限体系、Nuxt 前端、Langfuse 等重可观测平台（用自研轻量 AgentOps 替代）。
 
 ---
 
@@ -163,5 +173,5 @@
 | Day 1 | Spring Boot 骨架 + 4 元数据表 + LLM 客户端调通 DeepSeek |
 | Day 2 | 元数据 CRUD + 召回 + 问题改写节点 |
 | Day 3 | SQL 生成 + SQL 校验 + 执行 |
-| Day 4 | 结果解释 + 多轮对话 + 串起完整 7 步 |
+| Day 4 | 结果解释 + 多轮对话 + 串起完整 7 步 + AgentOps 埋点（trace/token/耗时） |
 | Day 5 | 极简前端 + few-shot + README + 演示视频 |
