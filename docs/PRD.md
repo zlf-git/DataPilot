@@ -58,7 +58,7 @@
 | DataAgent 特性 | DataPilot 做法 | 决策 |
 |---|---|---|
 | 智能数据分析（Text2SQL + 多轮） | 7 步链路 + 多轮对话 | ✅ 借鉴实现 |
-| RAG 检索增强（向量库语义检索） | 关键词 + SQL 模糊匹配（不引向量库） | 🟡 简化 |
+| RAG 检索增强（向量库语义检索） | Milvus 向量检索元数据 | ✅ 借鉴实现 |
 | 智能报告生成（ECharts HTML/MD） | 生成含 ECharts 的 HTML/Markdown 报告 | ✅ 借鉴实现 |
 | Python 深度分析（容器沙盒） | 不做，用「结果解释」替代 | ❌ 砍 |
 | 人工反馈（Human-in-the-loop） | 极简：SQL 生成后允许确认/修改 | 🟡 简化 |
@@ -93,6 +93,8 @@
 | 语义模型 | 表 / 字段 / 关系 | `semantic_model` + `field_metadata` | 可查询的表、字段、枚举值 |
 | 业务知识 | 术语 / 口径 | `metric_def` + `term_dict` | 指标口径（只定义一次）、业务黑话同义词 |
 | 智能体知识 | few-shot 示例 | `few_shot_example`（新增） | 问题-SQL 示例对，提升生成准确率 |
+
+**RAG 语义检索**：将表注释、字段注释、业务术语的文本做 Embedding，写入 Milvus 向量库；问数时对问题做向量召回，返回语义最相关的表/字段，提升 SQL 生成准确率（对齐 DataAgent 的 RAG 检索增强）。
 
 ### 4.4 SQL 安全校验（P0）
 - 只读白名单：仅允许 SELECT。
@@ -137,11 +139,11 @@
 - Text2SQL 7 步链路 + 多轮对话（借鉴「智能数据分析」）
 - 知识三层：语义模型 + 业务知识 + 智能体知识（借鉴「知识配置」）
 - 智能报告生成：ECharts HTML/Markdown（借鉴「智能报告」）
-- 轻量 RAG：关键词 + SQL 匹配（不引向量库）
+- RAG 语义检索：Milvus 向量库 + Embedding 召回（借鉴「RAG 检索增强」）
 - 多模型配置切换、可插拔数据源、单机部署
 
 **首版不做（后续可加）：**
-- Python 沙盒深度分析（需 Docker）、MCP 服务器、Human-in-the-loop 完整版、API Key 管理、多租户、完整权限体系、Nuxt 前端、向量数据库。
+- Python 沙盒深度分析（需 Docker）、MCP 服务器、Human-in-the-loop 完整版、API Key 管理、多租户、完整权限体系、Nuxt 前端。
 
 ---
 

@@ -18,11 +18,13 @@
 | 元数据库 | MySQL | 存语义模型/字段/指标/术语，关系型最自然 |
 | 业务数据引擎 | MySQL / StarRocks（预留 Excel，可插拔） | 复用数仓强项；异构源统一成 SQL 入口 |
 | LLM | DeepSeek（OpenAI 兼容） | 非推理模型，无 think 污染，便宜够用 |
+| Embedding | OpenAI 兼容（Qwen text-embedding-v3） | 元数据向量化，国内可达，可切换 |
+| 向量数据库 | Milvus 2.x（Docker Standalone） | 元数据语义检索，对标 DataAgent RAG |
 | Agent 编排 | 手写状态机 | 借鉴 StateGraph 思想，讲得深、依赖最少 |
 | HTTP 客户端 | RestClient | Spring 6 内置，无需额外依赖 |
 | 前端 | 极简 HTML | 演示够用，不铺 Nuxt |
 
-**与 DataAgent 选型对照**：DataAgent 用 Spring AI Alibaba + StateGraph + 向量库 + Python 沙盒 + Nuxt 前端；DataPilot 用 Spring Boot 裸框架 + 手写状态机 + SQL 匹配（替代向量库）+ 结果解释（替代沙盒）+ 极简 HTML（替代 Nuxt）。同款保留：Java 17 / Spring Boot 3.4.8 / MySQL / DeepSeek。核心差异：砍掉"重工程"（沙盒/向量库/MCP），保留"重数据"（语义层/口径/SQL 治理）。
+**与 DataAgent 选型对照**：DataAgent 用 Spring AI Alibaba + StateGraph + 向量库 + Python 沙盒 + Nuxt 前端；DataPilot 用 Spring Boot 裸框架 + 手写状态机 + Milvus 向量检索（同款）+ 结果解释（替代沙盒）+ 极简 HTML（替代 Nuxt）。同款保留：Java 17 / Spring Boot 3.4.8 / MySQL / DeepSeek / 向量检索。核心差异：砍掉"重工程"（Python 沙盒/MCP/API Key），保留"重数据 + 重检索"（语义层/口径/SQL 治理/RAG）。
 
 ---
 
@@ -46,6 +48,7 @@ graph LR
     S4 -.调用.-> LLM
     S7 -.调用.-> LLM
     S2 -.查.-> META[(元数据库 MySQL)]
+    S2 -.向量召回.-> VEC[(Milvus 向量库)]
     S6 -.查.-> BUS[(业务库 MySQL/StarRocks)]
 ```
 
@@ -128,9 +131,10 @@ public interface SqlExecutor {
 - 安全第一：只读白名单 + 表白名单 + LIMIT，在 LLM 生成 SQL 后、执行前拦截。
 - 对应 PRD 的核心痛点"裸调 LLM 生成的 SQL 越权/注入"，校验器是这道防线。
 
-### 5.5 为什么 RAG 用 SQL 匹配，不引向量库
-- DataAgent 的 RAG 用向量数据库做语义检索，但首版数据量小（几十张表），关键词 + LIKE 匹配已够用。
-- 引向量库（Milvus/PGVector）增加部署复杂度，5 天周期不值。接口上预留 Embedding 检索扩展点，数据量上来再换。
+### 5.5 为什么 RAG 选 Milvus 向量库
+- **语义检索 > 关键词匹配**：用户问"成交额"，元数据里写的是"支付金额"，字面不同但语义同。关键词匹配会漏，向量召回能命中。
+- **选 Milvus 而非 PGVector/ES**：Milvus 是专业向量库标杆（面试知名度高），向量索引（HNSW/IVF）成熟；PGVector 要引 PostgreSQL、与现有 MySQL 两套库；ES 的向量检索是后加能力。Milvus Standalone 一个 Docker Compose 即起，Java SDK（milvus-sdk-java）成熟。
+- **Embedding 用 OpenAI 兼容接口**（Qwen text-embedding-v3），与 LLM 客户端同一套调用方式，可切换。
 
 ---
 
