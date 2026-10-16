@@ -16,7 +16,7 @@
 | 语言 | Java 17 | 大数据/后端生态主语言，补齐后端短板 |
 | 框架 | Spring Boot 3.4.8 | 最小依赖，Web + JDBC 即可 |
 | 元数据库 | MySQL | 存语义模型/字段/指标/术语，关系型最自然 |
-| 业务数据引擎 | MySQL / StarRocks（可插拔） | 复用数仓强项，切换只改配置 |
+| 业务数据引擎 | MySQL / StarRocks（预留 Excel，可插拔） | 复用数仓强项；异构源统一成 SQL 入口 |
 | LLM | DeepSeek（OpenAI 兼容） | 非推理模型，无 think 污染，便宜够用 |
 | Agent 编排 | 手写状态机 | 借鉴 StateGraph 思想，讲得深、依赖最少 |
 | HTTP 客户端 | RestClient | Spring 6 内置，无需额外依赖 |
@@ -92,9 +92,31 @@ com.zlf.datapilot
 - 5 天周期调 Spring AI Graph 只能"会用"，被问"节点状态怎么序列化、图和顺序执行的区别"就露馅。
 - 手写状态机能讲清本质：状态在节点间流转 + 失败重试 + 条件分支，这些是我自己实现的，讲得深。
 
-### 5.2 为什么 SQL 引擎可插拔
-- 数仓背景的实际需求：业务数据可能在 MySQL（测试）也可能在 StarRocks（生产 ADS 表）。
-- 抽 `SqlExecutor` 接口，切换引擎只改配置不改主链路——这是"数据服务化"落地的雏形。
+### 5.2 为什么做「双轴可插拔」
+
+"可插拔"是两个维度，缺一不可：
+
+| 维度 | 插拔什么 | 对应接口 | 例子 |
+|---|---|---|---|
+| 能力轴 | Agent 会干什么 | `AgentStep`（Skill） | 查元数据 / 生成SQL / 画图 / 导出 |
+| 数据源轴 | Agent 从哪取数 | `SqlExecutor`（DataSource） | MySQL / StarRocks / Excel / CSV |
+
+**数据源轴的难点：异构引擎怎么统一。** MySQL/StarRocks 本身是 SQL 引擎，`query(sql)` 天然成立；但 Excel 是文件、不是数据库。解法是把 Excel "伪装"成 SQL 引擎——内部用 DuckDB 直接 `SELECT * FROM 'xxx.xlsx'`，对外暴露同一个 `query()` 入口。
+
+**接口设计（统一"取数"和"元数据召回"两个能力）：**
+
+```java
+public interface SqlExecutor {
+    String engineName();
+    List<TableMeta> listTables();              // 支撑第②步元数据召回
+    List<Map<String, Object>> query(String sql);
+}
+```
+
+- MySQL/StarRocks 实现：`listTables()` 查 information_schema。
+- Excel 实现：`listTables()` 解析 sheet 名和表头，`query()` 内部转 DuckDB。
+
+**这一设计的本质是「统一数据访问层 / Query Federation」**——Presto/Trino 做的就是"一个 SQL 入口插一堆异构数据源"。首版先实现 MySQL + StarRocks，Excel 作为接口预留的扩展点。
 
 ### 5.3 为什么元数据存 MySQL，不用 StarRocks
 - 元数据是"关系型小数据"（表/字段/指标/术语），需要精确查询、唯一约束、事务。
