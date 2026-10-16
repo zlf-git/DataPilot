@@ -63,7 +63,7 @@
 | Python 深度分析（容器沙盒） | 不做，用「结果解释」替代 | ❌ 砍 |
 | 人工反馈（Human-in-the-loop） | 极简：SQL 生成后允许确认/修改 | 🟡 简化 |
 | 多模型调度（模型注册表） | 配置项切换 LLM（DeepSeek/Qwen） | 🟡 简化 |
-| MCP 服务器 | 不做 | ❌ 砍 |
+| MCP 服务器 | Phase 2：DataPilot 作为 MCP Server 暴露问数工具 | 🟡 预留扩展 |
 | API Key 管理 | 不做 | ❌ 砍 |
 | AgentOps 可观测性（Trace / 成本 / 失败定位） | 自研轻量 AgentOps（traceId + token 埋点） | ✨ 差异化新增 |
 
@@ -154,7 +154,10 @@
 - AgentOps 可观测：trace 追踪 + token 成本 + 失败定位（差异化亮点）
 
 **首版不做（后续可加）：**
-- Python 沙盒深度分析（需 Docker）、MCP 服务器、Human-in-the-loop 完整版、API Key 管理、多租户、完整权限体系、Nuxt 前端、Langfuse 等重可观测平台（用自研轻量 AgentOps 替代）。
+- Python 沙盒深度分析（需 Docker）、Human-in-the-loop 完整版、API Key 管理、多租户、完整权限体系、Nuxt 前端、Langfuse 等重可观测平台（用自研轻量 AgentOps 替代）。
+
+**Phase 2 预留（首版跑通后加）：**
+- MCP Server：把问数能力封装成 MCP 工具，供 Claude Desktop / Cursor / 其他 Agent 通过标准协议调用（数据服务化的协议落地）。
 
 ---
 

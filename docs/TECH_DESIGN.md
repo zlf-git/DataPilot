@@ -24,8 +24,9 @@
 | HTTP 客户端 | RestClient | Spring 6 内置，无需额外依赖 |
 | 前端 | 极简 HTML | 演示够用，不铺 Nuxt |
 | Agent 可观测性 | 自研轻量 AgentOps（对齐 AgentOps-AI/agentops span 层级） | 差异化亮点；Java 栈自研比引 Python SDK 更能讲深 |
+| MCP 暴露（Phase 2） | Spring AI MCP Server（或 MCP Java SDK） | 把问数能力封装成 MCP 工具，数据服务化的协议落地 |
 
-**与 DataAgent 选型对照**：DataAgent 用 Spring AI Alibaba + StateGraph + 向量库 + Python 沙盒 + Nuxt 前端；DataPilot 用 Spring Boot 裸框架 + 手写状态机 + Milvus 向量检索（同款）+ 结果解释（替代沙盒）+ 极简 HTML（替代 Nuxt）。同款保留：Java 17 / Spring Boot 3.4.8 / MySQL / DeepSeek / 向量检索。核心差异：砍掉"重工程"（Python 沙盒/MCP/API Key），保留"重数据 + 重检索"（语义层/口径/SQL 治理/RAG）。
+**与 DataAgent 选型对照**：DataAgent 用 Spring AI Alibaba + StateGraph + 向量库 + Python 沙盒 + Nuxt 前端；DataPilot 用 Spring Boot 裸框架 + 手写状态机 + Milvus 向量检索（同款）+ 结果解释（替代沙盒）+ 极简 HTML（替代 Nuxt）。同款保留：Java 17 / Spring Boot 3.4.8 / MySQL / DeepSeek / 向量检索。核心差异：砍掉"重工程"（Python 沙盒/API Key），保留"重数据 + 重检索"（语义层/口径/SQL 治理/RAG）；MCP 从"砍掉"升级为 Phase 2 预留（作为 MCP Server 暴露问数能力，是数据服务化的协议落地）。
 
 ---
 
@@ -52,6 +53,8 @@ graph LR
     S2 -.向量召回.-> VEC[(Milvus 向量库)]
     S6 -.查.-> BUS[(业务库 MySQL/StarRocks)]
     O -.埋点 trace/token.-> TRACE[(AgentOps 运行库 MySQL)]
+
+    MC[MCP Client<br/>Claude/Cursor/Agent] -.MCP 协议(Phase 2).-> C
 ```
 
 **一句话**：Controller 收问题 → 状态机串 7 个节点 → 节点间通过 `AgentContext` 传递状态 → 执行结果经 LLM 解释后返回。
@@ -157,6 +160,13 @@ public interface SqlExecutor {
 4. **跨 session 指标（summary analytics）**：`agent_run` 按天聚合 token 成本、成功率、平均耗时，即 AgentOps 概览面板的雏形。
 
 **为什么不直接引 AgentOps SDK**：它是 Python SDK，DataPilot 是 Java 栈；且引 SDK 只能"会用"，自研能把"可观测性到底观测什么"讲清，和数仓「事实表」思想无缝咬合。
+
+### 5.7 为什么 Phase 2 做 MCP Server（数据服务化的协议落地）
+- MCP（Model Context Protocol）是 Anthropic 提出的开放协议，让 LLM 应用通过统一协议接入外部工具/数据源，2025 已成为 AI 应用的事实标准。
+- DataPilot 作为 **MCP Server**：把「问数能力」封装成标准工具 `ask_data(question)`，任何支持 MCP 的客户端（Claude Desktop / Cursor / 其他 Agent）都能把 DataPilot 当"数据工具"调用，内部复用 7 步链路。
+- **和项目主线一脉相承**：可插拔数据源（SqlExecutor）是"数据统一访问"，MCP 是"数据服务化的协议标准"——前者解决"从哪取数"，后者解决"别人怎么用我的取数能力"。
+- **为什么放 Phase 2 不塞首版**：MCP 协议有实现成本（JSON-RPC 握手、stdio/SSE 传输、工具 schema 注册），5 天核心链路（Text2SQL）优先；架构上 REST 接口和 MCP 是同一套服务的两种协议入口，加 MCP 不重构主链路。
+- **这也是后端能力的直接证明**：写一个服务、用标准协议暴露接口、让别人能接入，是纯正的后端协议设计能力。
 
 ---
 
