@@ -38,6 +38,12 @@
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- Milvus 向量库 SDK（可插拔向量轴，milvus.enabled=false 时运行时不加载） -->
+        <dependency>
+            <groupId>io.milvus</groupId>
+            <artifactId>milvus-sdk-java</artifactId>
+            <version>2.6.0</version>
+        </dependency>
     </dependencies>
 
     <build>
