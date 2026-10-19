@@ -1,0 +1,19 @@
+services:
+  dinky:
+    build:
+      context: ./dinky
+      dockerfile: Dockerfile
+    image: dataplatform/dinky:1.2.5-flink1.20
+    container_name: dinky
+    ports:
+      - "8888:8888"
+    environment:
+      - TZ=Asia/Shanghai
+      - DB_ACTIVE=mysql
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+networks:
+  hadoop-net:
+    external: true

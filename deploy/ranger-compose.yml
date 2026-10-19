@@ -1,0 +1,63 @@
+services:
+  ranger-zk:
+    image: docker.m.daocloud.io/apache/ranger-zk:2.8.0
+    container_name: ranger-zk
+    hostname: ranger-zk.example.com
+    ports:
+      - "2182:2181"
+    networks:
+      - ranger-net
+    restart: unless-stopped
+
+  ranger-solr:
+    image: docker.m.daocloud.io/apache/ranger-solr:2.9.0
+    container_name: ranger-solr
+    hostname: ranger-solr.example.com
+    ports:
+      - "8983:8983"
+    networks:
+      - ranger-net
+    command: solr-precreate ranger_audits /opt/solr/server/solr/configsets/ranger_audits/
+    volumes:
+      - "D:/starrocks/data/ranger/solr:/var/solr"
+    restart: unless-stopped
+
+  ranger-db:
+    image: docker.m.daocloud.io/apache/ranger-db:2.9.0
+    container_name: ranger-db
+    hostname: ranger-db.example.com
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=CHANGE_ME_PASSWORD
+    volumes:
+      - "D:/starrocks/data/ranger/postgres:/var/lib/postgresql/data"
+    networks:
+      - ranger-net
+    restart: unless-stopped
+
+  ranger:
+    image: docker.m.daocloud.io/apache/ranger:2.9.0
+    container_name: ranger
+    hostname: ranger.example.com
+    ports:
+      - "6080:6080"
+    networks:
+      - ranger-net
+    environment:
+      - RANGER_VERSION=2.9.0
+      - RANGER_DB_TYPE=postgres
+      - POSTGRES_PASSWORD=CHANGE_ME_PASSWORD
+      - RANGER_DB_USER=ranger
+      - RANGER_DB_PASSWORD=CHANGE_ME_PASSWORD
+      - TZ=Asia/Shanghai
+    command: /home/ranger/scripts/ranger.sh
+    depends_on:
+      - ranger-db
+      - ranger-solr
+      - ranger-zk
+    restart: unless-stopped
+
+networks:
+  ranger-net:
+    driver: bridge
