@@ -1,0 +1,37 @@
+version: "3.9"
+
+# 数据平台可视化/调度层编排（统一网络 hadoop-net）
+# Grafana（监控大屏）+ DolphinScheduler（任务调度）+ Dinky（FlinkSQL 数据开发）+ go-view（可视化大屏）
+# 均使用 docker.m.daocloud.io 镜像加速源，资源持久化到 D 盘
+
+networks:
+  hadoop-net:
+    external: true
+
+services:
+  grafana:
+    image: docker.m.daocloud.io/grafana/grafana:latest
+    container_name: grafana
+    hostname: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - "D:/starrocks/data/grafana:/var/lib/grafana"
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  dolphinscheduler:
+    image: docker.m.daocloud.io/apache/dolphinscheduler-standalone-server:3.2.2
+    container_name: dolphinscheduler
+    hostname: dolphinscheduler
+    ports:
+      - "12345:12345"   # 前端 UI
+      - "25333:25333"   # 后端 API
+    environment:
+      - TZ=Asia/Shanghai
+    networks:
+      - hadoop-net
+    restart: unless-stopped
