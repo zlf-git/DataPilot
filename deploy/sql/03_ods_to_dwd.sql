@@ -1,6 +1,7 @@
 -- ============================================================
--- 作业3：Paimon ODS → Paimon DWD（湖留存：明细层清洗 + dt 字段）
+-- 作业3：Paimon ODS → Paimon DWD（湖留存：事实明细层清洗 + dt 字段）
 -- 链路：ods_orders → dwd_orders
+-- 事实表只存维度外键（product_id/channel/province），维度描述由下游 join dim_* 补齐
 -- ============================================================
 
 SET 'execution.checkpointing.interval' = '10 s';
@@ -20,15 +21,13 @@ CREATE CATALOG IF NOT EXISTS paimon_catalog WITH (
 USE CATALOG paimon_catalog;
 USE mall_dw;
 
--- 1. DWD 订单明细表（主键 order_id，含标准化 dt 字段）
+-- 1. DWD 订单事实明细表（主键 order_id，只存维度外键，含标准化 dt 字段）
 CREATE TABLE IF NOT EXISTS dwd_orders (
     order_id        STRING,
     platform_code   STRING,
     shop_id         STRING,
     buyer_uid       STRING,
     product_id      STRING,
-    product_name    STRING,
-    category_name   STRING,
     channel         STRING,
     province        STRING,
     total_amount    DECIMAL(16,2),
@@ -37,12 +36,11 @@ CREATE TABLE IF NOT EXISTS dwd_orders (
     dt              STRING,
     PRIMARY KEY (order_id, dt) NOT ENFORCED
 ) PARTITIONED BY (dt) WITH (
-    'connector' = 'paimon',
     'changelog-producer' = 'input',
     'bucket' = '2'
 );
 
--- 2. ODS → DWD：过滤脏数据 + 生成 dt 字段
+-- 2. ODS → DWD：过滤脏数据 + 生成 dt 字段（保留维度外键，不冗余维度描述）
 INSERT INTO dwd_orders
 SELECT
     order_id,
@@ -50,8 +48,6 @@ SELECT
     shop_id,
     buyer_uid,
     product_id,
-    product_name,
-    category_name,
     channel,
     province,
     total_amount,

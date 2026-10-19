@@ -47,6 +47,7 @@ CREATE TABLE sr_ads_trade (
 CREATE TABLE sr_ads_channel (
     dt                    STRING,
     channel               STRING,
+    channel_name          STRING,
     visit_uv              BIGINT,
     order_cnt             BIGINT,
     paid_order_cnt        BIGINT,
@@ -70,6 +71,8 @@ CREATE TABLE sr_ads_channel (
 CREATE TABLE sr_ads_region (
     dt               STRING,
     province         STRING,
+    province_name    STRING,
+    region           STRING,
     order_cnt        BIGINT,
     paid_order_cnt   BIGINT,
     paid_user_cnt    BIGINT,
@@ -120,13 +123,13 @@ FROM paimon_catalog.mall_dw.ads_trade_overview_di;
 
 -- 3.2 渠道转化
 INSERT INTO sr_ads_channel
-SELECT dt, channel, visit_uv, order_cnt, paid_order_cnt, gmv,
+SELECT dt, channel, channel_name, visit_uv, order_cnt, paid_order_cnt, gmv,
        order_conversion_rate, pay_conversion_rate
 FROM paimon_catalog.mall_dw.ads_channel_conversion_di;
 
 -- 3.3 地区 GMV
 INSERT INTO sr_ads_region
-SELECT dt, province, order_cnt, paid_order_cnt, paid_user_cnt, gmv
+SELECT dt, province, province_name, region, order_cnt, paid_order_cnt, paid_user_cnt, gmv
 FROM paimon_catalog.mall_dw.ads_region_gmv_di;
 
 -- 3.4 商品排行
