@@ -42,7 +42,7 @@ services:
       - KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
       - KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1
     volumes:
-      - "D:/starrocks/data/kafka:/bitnami/kafka/data"
+      - "D:/starrocks/data/kafka-data:/bitnami/kafka/data"
     networks:
       - hadoop-net
     restart: unless-stopped
@@ -57,12 +57,16 @@ services:
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 2
+        taskmanager.numberOfTaskSlots: 8
     volumes:
-      - "D:/starrocks/lib/paimon-flink-1.20-1.4.2.jar:/opt/flink/lib/paimon-flink-1.20-1.4.2.jar"
+      - "D:/starrocks/lib/paimon-flink-1.20-1.0.1.jar:/opt/flink/lib/paimon-flink-1.20-1.0.1.jar"
       - "D:/starrocks/lib/mysql-connector-j-8.0.33.jar:/opt/flink/lib/mysql-connector-j-8.0.33.jar"
       - "D:/starrocks/lib/flink-sql-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-sql-connector-kafka-3.3.0-1.20.jar"
       - "D:/starrocks/lib/flink-sql-connector-mysql-cdc-3.2.1.jar:/opt/flink/lib/flink-sql-connector-mysql-cdc-3.2.1.jar"
+      - "D:/starrocks/lib/flink-sql-connector-hive-3.1.3_2.12-1.20.0.jar:/opt/flink/lib/flink-sql-connector-hive-3.1.3_2.12-1.20.0.jar"
+      - "D:/starrocks/lib/hadoop-client-api-3.3.3.jar:/opt/flink/lib/hadoop-client-api-3.3.3.jar"
+      - "D:/starrocks/lib/hadoop-client-runtime-3.3.3.jar:/opt/flink/lib/hadoop-client-runtime-3.3.3.jar"
+      - "D:/starrocks/lib/commons-logging-1.2.jar:/opt/flink/lib/commons-logging-1.2.jar"
     networks:
       - hadoop-net
     restart: unless-stopped
@@ -76,18 +80,22 @@ services:
       JOB_MANAGER_RPC_ADDRESS: flink-jobmanager
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 2
+        taskmanager.numberOfTaskSlots: 8
     volumes:
-      - "D:/starrocks/lib/paimon-flink-1.20-1.4.2.jar:/opt/flink/lib/paimon-flink-1.20-1.4.2.jar"
+      - "D:/starrocks/lib/paimon-flink-1.20-1.0.1.jar:/opt/flink/lib/paimon-flink-1.20-1.0.1.jar"
       - "D:/starrocks/lib/mysql-connector-j-8.0.33.jar:/opt/flink/lib/mysql-connector-j-8.0.33.jar"
       - "D:/starrocks/lib/flink-sql-connector-kafka-3.3.0-1.20.jar:/opt/flink/lib/flink-sql-connector-kafka-3.3.0-1.20.jar"
       - "D:/starrocks/lib/flink-sql-connector-mysql-cdc-3.2.1.jar:/opt/flink/lib/flink-sql-connector-mysql-cdc-3.2.1.jar"
+      - "D:/starrocks/lib/flink-sql-connector-hive-3.1.3_2.12-1.20.0.jar:/opt/flink/lib/flink-sql-connector-hive-3.1.3_2.12-1.20.0.jar"
+      - "D:/starrocks/lib/hadoop-client-api-3.3.3.jar:/opt/flink/lib/hadoop-client-api-3.3.3.jar"
+      - "D:/starrocks/lib/hadoop-client-runtime-3.3.3.jar:/opt/flink/lib/hadoop-client-runtime-3.3.3.jar"
+      - "D:/starrocks/lib/commons-logging-1.2.jar:/opt/flink/lib/commons-logging-1.2.jar"
     networks:
       - hadoop-net
     restart: unless-stopped
 
   starrocks:
-    image: starrocks/allin1-ubuntu:3.2.11
+    image: starrocks/allin1-ubuntu:3.3.8
     container_name: sr-ai-analysis
     hostname: sr-ai-analysis
     ports:
