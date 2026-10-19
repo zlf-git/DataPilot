@@ -5,6 +5,9 @@
 
 SET 'execution.checkpointing.interval' = '10 s';
 SET 'execution.checkpointing.mode' = 'EXACTLY_ONCE';
+SET 'execution.restart-strategy' = 'fixed-delay';
+SET 'execution.restart-strategy.fixed-delay.attempts' = '10';
+SET 'execution.restart-strategy.fixed-delay.delay' = '10s';
 SET 'table.exec.sink.upsert-materialize' = 'NONE';
 
 -- 1. Paimon Catalog（元数据注册 Hive Metastore，数据落 HDFS）

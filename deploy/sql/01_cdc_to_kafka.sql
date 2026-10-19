@@ -6,6 +6,9 @@
 
 SET 'execution.checkpointing.interval' = '10 s';
 SET 'execution.checkpointing.mode' = 'EXACTLY_ONCE';
+SET 'execution.restart-strategy' = 'fixed-delay';
+SET 'execution.restart-strategy.fixed-delay.attempts' = '10';
+SET 'execution.restart-strategy.fixed-delay.delay' = '10s';
 
 -- 1. MySQL CDC 源表
 CREATE TABLE IF NOT EXISTS orders_cdc_source (
