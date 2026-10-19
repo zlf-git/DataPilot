@@ -34,9 +34,11 @@ CREATE TABLE IF NOT EXISTS ods_orders (
     total_amount    DECIMAL(16,2),
     pay_status      STRING,
     create_time     TIMESTAMP(3),
-    PRIMARY KEY (id) NOT ENFORCED
-) WITH (
+    dt              STRING,
+    PRIMARY KEY (id, dt) NOT ENFORCED
+) PARTITIONED BY (dt) WITH (
     'connector' = 'paimon',
+    'changelog-producer' = 'input',
     'bucket' = '2'
 );
 
@@ -73,5 +75,6 @@ USE mall_dw;
 
 INSERT INTO ods_orders
 SELECT id, order_id, platform_code, shop_id, buyer_uid, product_id, product_name,
-       category_name, channel, province, total_amount, pay_status, create_time
+       category_name, channel, province, total_amount, pay_status, create_time,
+       DATE_FORMAT(create_time, 'yyyyMMdd') AS dt
 FROM default_catalog.default_database.kafka_cdc_source;

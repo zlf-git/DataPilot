@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS dws_channel_order_day (
     paid_order_cnt  BIGINT,
     gmv             DECIMAL(16,2),
     PRIMARY KEY (dt, channel) NOT ENFORCED
-) PARTITIONED BY (dt) WITH ('bucket' = '1');
+) PARTITIONED BY (dt) WITH ('changelog-producer' = 'input', 'bucket' = '1');
 
 -- 2. DWS 省份日汇总
 CREATE TABLE IF NOT EXISTS dws_province_order_day (
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS dws_province_order_day (
     paid_user_cnt   BIGINT,
     gmv             DECIMAL(16,2),
     PRIMARY KEY (dt, province) NOT ENFORCED
-) PARTITIONED BY (dt) WITH ('bucket' = '1');
+) PARTITIONED BY (dt) WITH ('changelog-producer' = 'input', 'bucket' = '1');
 
 -- 3. DWS 商品日汇总
 CREATE TABLE IF NOT EXISTS dws_product_sales_day (
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS dws_product_sales_day (
     sale_cnt        BIGINT,
     sale_amount     DECIMAL(16,2),
     PRIMARY KEY (dt, product_id) NOT ENFORCED
-) PARTITIONED BY (dt) WITH ('bucket' = '1');
+) PARTITIONED BY (dt) WITH ('changelog-producer' = 'input', 'bucket' = '1');
 
 -- 4. 写入 DWS 渠道汇总
 INSERT INTO dws_channel_order_day

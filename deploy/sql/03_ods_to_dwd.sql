@@ -32,9 +32,10 @@ CREATE TABLE IF NOT EXISTS dwd_orders (
     pay_status      STRING,
     create_time     TIMESTAMP(3),
     dt              STRING,
-    PRIMARY KEY (order_id) NOT ENFORCED
-) WITH (
+    PRIMARY KEY (order_id, dt) NOT ENFORCED
+) PARTITIONED BY (dt) WITH (
     'connector' = 'paimon',
+    'changelog-producer' = 'input',
     'bucket' = '2'
 );
 

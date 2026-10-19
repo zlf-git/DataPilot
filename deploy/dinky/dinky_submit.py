@@ -40,7 +40,7 @@ def query_task_id(name):
     return int(lines[0]) if lines else None
 
 
-def save_task(token, name, statement, task_id=None):
+def save_task(token, name, statement, task_id=None, batch_model=False):
     body = {
         "name": name,
         "dialect": "FlinkSQL",
@@ -49,6 +49,7 @@ def save_task(token, name, statement, task_id=None):
         "clusterId": CLUSTER_ID,
         "enabled": True,
         "step": 1,
+        "batchModel": batch_model,
         "note": f"DataPilot 链路作业 {name}",
     }
     if task_id:
@@ -71,7 +72,9 @@ def main():
     task_id = query_task_id(job_name)
     print("task_id:", task_id)
 
-    r = save_task(token, job_name, statement, task_id)
+    # job5（写湖）/job6（同步仓）是批模式（T+1 全量重算），job1-4 为流模式
+    batch_model = job_name.startswith(("job5", "job6"))
+    r = save_task(token, job_name, statement, task_id, batch_model=batch_model)
     print("save:", json.dumps(r, ensure_ascii=False)[:400])
 
     if task_id is None:
