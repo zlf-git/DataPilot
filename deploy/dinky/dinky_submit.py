@@ -72,8 +72,9 @@ def main():
     task_id = query_task_id(job_name)
     print("task_id:", task_id)
 
-    # job5（写湖）/job6（同步仓）是批模式（T+1 全量重算），job1-4 为流模式
-    batch_model = job_name.startswith(("job5", "job6"))
+    # 全流改造后：job1-5 均为流作业（job5=DWS 流写 SR），只有 job6 是批模式
+    # （从 DWS 全量重建 SR 的补数/回刷入口）。
+    batch_model = job_name.startswith("job6")
     r = save_task(token, job_name, statement, task_id, batch_model=batch_model)
     print("save:", json.dumps(r, ensure_ascii=False)[:400])
 

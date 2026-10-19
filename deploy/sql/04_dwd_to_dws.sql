@@ -5,23 +5,23 @@
 -- 关键设计：
 --   1. 维表 join：事实表只存外键，此处用 lookup join（FOR SYSTEM_TIME AS OF）
 --      把 dim_* 维度描述拼回 DWS，供 ADS 直接使用。
---   2. State TTL：流式无界 GROUP BY dt 的状态随 dt 增长，设 table.exec.state.ttl
---      兜底——超过 48h 未更新的 dt 状态自动清理，防状态无限膨胀。
---      （副作用：迟到/超时更新的订单会重新从 0 累计，故 TTL 需 ≥ 订单状态
---       变更容忍窗口，2~7 天为合理区间。）
+--   2. State TTL：流式无界 GROUP BY dt 的状态随 dt 增长，设 table.exec.state.ttl = 7 d
+--      兜底——超过 7 天未更新的 dt 状态自动清理，防状态无限膨胀。
+--      （支付状态变更窗口 2~7 天，TTL 必须覆盖它；不写则默认永不过期、状态无界增长。）
 --   3. trade_overview 下沉：经营总览全局日汇总在此流式维护，job5 只从 DWS 读，
 --      不再扫 dwd_orders 明细全表（解决 T+1 全量重算越跑越慢问题）。
 -- ============================================================
 
-SET 'execution.checkpointing.interval' = '10 s';
+SET 'execution.checkpointing.interval' = '60 s';
 SET 'execution.checkpointing.mode' = 'EXACTLY_ONCE';
 SET 'execution.restart-strategy' = 'fixed-delay';
 SET 'execution.restart-strategy.fixed-delay.attempts' = '10';
 SET 'execution.restart-strategy.fixed-delay.delay' = '10s';
 SET 'table.exec.sink.upsert-materialize' = 'NONE';
 SET 'parallelism.default' = '1';
--- 状态 TTL：日汇总 GROUP BY 状态按「访问时间」过期，防状态随 dt 无界膨胀
-SET 'table.exec.state.ttl' = '48h';
+-- 状态 TTL：支付状态可能在 2~7 天后才变更，TTL 短于该窗口会让迟到更新
+-- 从 0 重算并覆盖已算对的值（且不报错）；开源 Flink 默认 0=永不过期会无界膨胀。
+SET 'table.exec.state.ttl' = '7 d';
 
 CREATE CATALOG IF NOT EXISTS paimon_catalog WITH (
     'type' = 'paimon',
