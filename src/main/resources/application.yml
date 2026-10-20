@@ -3,24 +3,20 @@ server:
 
 spring:
   datasource:
-    # 元数据库（存语义模型/字段/指标/术语/few-shot/AgentOps，固定用 MySQL）
-    url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    # 元数据库（存语义模型/字段/指标/术语/few-shot/AgentOps，固定用 MySQL，端口 3307）
+    url: jdbc:mysql://localhost:3307/data_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
-    password: root
+    password: ${MYSQL_META_PASSWORD:root123}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
 datapilot:
   # 可插拔的业务数据执行引擎（数据源轴）
   engine:
-    # 业务数据引擎类型：mysql / starrocks，切换这里即可
-    type: mysql
-    url: jdbc:mysql://localhost:3306/data_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: root
-    # type=starrocks 时，改用下面这套（StarRocks 兼容 MySQL 协议，用同一个 JDBC 驱动）
-    # url: jdbc:mysql://localhost:9030/data_agent?useUnicode=true&characterEncoding=utf8
-    # username: root
-    # password: ""
+    # 业务数据引擎：starrocks（业务数据在 mall_dw，只读账号 agent_ro）
+    type: starrocks
+    url: jdbc:mysql://localhost:9030/mall_dw?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
+    username: agent_ro
+    password: ${STARROCKS_AGENT_PASSWORD:AgentRo@2026}
 
   # LLM（OpenAI 兼容，默认 DeepSeek 非推理模型，无 think 污染）
   llm:
