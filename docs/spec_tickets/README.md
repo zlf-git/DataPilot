@@ -65,6 +65,19 @@
 
 ## 修订记录
 
+### v2.11（Ticket 08 多模型工厂）
+
+- **切模型只改一行**：`datapilot.llm.provider` = `stub`（默认）/ `deepseek` / `qwen`。base-url、模型名、Key 环境变量随 provider 自动切换，`base-url` / `model` / `api-key` 留空取默认值，填了即覆盖（私有化部署、代理网关、换模型版本都不改代码）
+- **一个实现 + 参数化端点**：DeepSeek 与 Qwen 协议层同构，抽出 `OpenAiCompatibleLlmClient` 取代原 `DeepSeekLlmClient`（已删，git 历史保留）；厂商差异全部收在 `LlmProvider` 枚举（默认端点 / 默认模型 / Key 变量名）
+- **工厂不产 stub，是硬拒绝**：`LlmClientFactory.resolve()` 遇 `stub`/空值直接抛，缺 Key 也抛并指明该设哪个环境变量 —— 防「配了 deepseek 但 Key 没读到 → 静默退回桩 → 拿到看着正常的错数」（审计 P0#2）
+- **装配互斥用自定义 `@Conditional`**（`RealLlmProviderCondition`）而非 `@ConditionalOnProperty`（只吃单值，每加一个厂商就要多写一个 `@Bean`）；非法 provider 启动即失败，与 `engine.type` 同款
+- **`descriptor()` 有真实消费方**：新增 `GET /api/health/llm` 与启动日志「LLM 就绪：provider/base-url/model/key=已配置|缺失」，避免「环境变量没导、占位符没替换」静默走默认值；Key 只报有无不回显
+- **base-url 归一化**：剥尾斜杠与结尾多余的 `/v1`（Spring AI 自己拼 `/v1/chat/completions`，写成 `/v1` 会 404 且只在真实调用时暴露）；只剥结尾，网关路径中间的 v1 不动
+- **本轮踩坑并修掉**：`@EventListener` 方法写成 `reportLlm(LlmClient)` 会把参数当事件体，应用「启动成功后再崩」`argument type mismatch`；改无参 + `ObjectProvider`，并补 `startupSelfCheckRunsWithoutCrash` 手动 publish 事件钉死（M1/M2 两个变异均已红过）
+- 测试 70/70（新增 LlmClientFactory 13 / LlmClientConfig 6）；stub 侧 `run_eval` PASS、`e2e_stub` PASS、`verify_stub_ir` 15/15 零回归
+- 运行时自检实测：stub → `StubLlmClient` 无端点；deepseek（Key 走环境变量）→ `baseUrl=http://127.0.0.1:9`（传入 `/v1/` 已归一）、`model=deepseek-chat`；端点不可达时 `/api/ask` 返回「模型服务异常…」且 `sql=null`，不静默出数
+- 遗留：真模型调用未做（无 Key），QA-05 U5「真实 LLM 能否稳定选对 composite 指标」仍未收口；token 用量归 Ticket 09
+
 ### v2.10（Ticket 07 引擎接口化）
 
 - **执行器接口化**：`SqlExecutor` 补 `query(SqlCommand)`（主链路唯一入口）与 `readableTables()`（白名单钩子），新增抽象基类 `JdbcSqlExecutor` 承载共用执行逻辑，`StarRocksSqlExecutor` / `MysqlSqlExecutor` 仅差 `@ConditionalOnProperty` + 声明表；`SqlExecuteStep` 改为依赖接口，主链路与五道闸门零改动

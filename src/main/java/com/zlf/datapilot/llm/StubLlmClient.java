@@ -83,6 +83,11 @@ public class StubLlmClient implements LlmClient {
         return g;
     }
 
+    @Override
+    public LlmDescriptor descriptor() {
+        return LlmDescriptor.stub();
+    }
+
     /**
      * 匹配策略（QA-03 P2-1）：精确优先，其次唯一部分匹配；部分匹配到<b>多条</b>说明用户把两个问题拼在一起问了
      * （「近7天GMV最高的渠道是哪个？另外10月19日总GMV是多少」），此前会静默只答第一题、第二题彻底消失。

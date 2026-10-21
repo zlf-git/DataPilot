@@ -124,9 +124,27 @@ public class DatapilotProperties {
         }
     }
 
-    /** LLM 配置：provider 决定装配桩(stub)还是真模型(deepseek)；连接信息走 spring.ai.openai.* */
+    /**
+     * LLM 配置（Ticket 08）：{@code provider} 是切模型的<b>唯一开关</b>。
+     * <ul>
+     *   <li>{@code stub}：离线桩，读 {@code stub_ir/*.json}，不连网、不需要 Key（Ticket 01 装配）；</li>
+     *   <li>{@code deepseek} / {@code qwen}：真实 provider，由 {@code LlmClientFactory} 按本段配置产出
+     *       OpenAI 兼容客户端，<b>不再依赖 {@code spring.ai.openai.*}</b>。</li>
+     * </ul>
+     * {@code baseUrl} / {@code model} / {@code apiKey} 留空 = 用 provider 默认值
+     * （见 {@code LlmProvider}），所以切 provider 只改一行；私有化部署、代理网关、换模型版本
+     * 则填这三项，同样不改代码。
+     */
     public static class Llm {
         private String provider = "stub";
+        /** 留空 → provider 默认端点（deepseek: api.deepseek.com；qwen: dashscope compatible-mode） */
+        private String baseUrl;
+        /** 留空 → provider 默认模型（deepseek-chat / qwen-plus） */
+        private String model;
+        /** 留空 → 读 provider 对应的环境变量（DEEPSEEK_API_KEY / DASHSCOPE_API_KEY） */
+        private String apiKey;
+        /** 采样温度：问数场景要可复现，默认 0 */
+        private double temperature = 0.0;
 
         public String getProvider() {
             return provider;
@@ -134,6 +152,38 @@ public class DatapilotProperties {
 
         public void setProvider(String provider) {
             this.provider = provider;
+        }
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        public String getModel() {
+            return model;
+        }
+
+        public void setModel(String model) {
+            this.model = model;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public double getTemperature() {
+            return temperature;
+        }
+
+        public void setTemperature(double temperature) {
+            this.temperature = temperature;
         }
     }
 

@@ -10,7 +10,9 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   ai:
     openai:
-      # DeepSeek 走 OpenAI 兼容协议；base-url 不要加 /v1，Spring AI 会自动补全路径
+      # ⚠️ Ticket 08 起 DataPilot 不再用这段配置决定连哪个模型（base-url/model 由 datapilot.llm 决定）。
+      # 保留它是为了让 spring-ai 的 OpenAiAutoConfiguration 能正常建 bean（api-key 为空会启动失败）。
+      # 真正生效的是下面 datapilot.llm.provider。
       base-url: https://api.deepseek.com
       api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
       chat:
@@ -38,9 +40,20 @@ datapilot:
     # 时间锚点（数据 MAX(dt)）缓存 TTL 秒，按表缓存；数据日更时 60s 足够
     anchor-ttl-seconds: 60
 
-  # LLM：provider 决定装配桩(stub)还是真模型(deepseek)；真实 provider 的连接信息走 spring.ai.openai.*
+  # LLM（Ticket 08：多模型工厂）
+  # provider 是切模型的唯一开关，改这一行不改代码：
+  #   stub     → 离线桩，读 stub_ir/*.json，不连网不需要 Key（默认，评测/单测用）
+  #   deepseek → https://api.deepseek.com + deepseek-chat，Key 读 DEEPSEEK_API_KEY
+  #   qwen     → 百炼 DashScope 兼容模式 + qwen-plus，Key 读 DASHSCOPE_API_KEY
+  # base-url / model / api-key 留空 = 取 provider 默认值；填了就覆盖（私有化部署 / 代理网关 / 换模型版本）。
+  # base-url 不必带 /v1（框架自己拼 /v1/chat/completions，写了也会被归一化剥掉）。
+  # 切完看 GET /api/health/llm 确认真的换过来了。
   llm:
-    provider: stub   # stub / deepseek
+    provider: stub   # stub / deepseek / qwen
+    base-url:        # 例：qwen 走私有网关 → https://gw.internal.com/dashscope
+    model:           # 例：deepseek-reasoner / qwen-max
+    api-key:         # 留空 → 读环境变量；不建议把 Key 写进仓库
+    temperature: 0.0
 
   # Embedding（OpenAI 兼容，Qwen text-embedding-v3，1024 维）
   embedding:
