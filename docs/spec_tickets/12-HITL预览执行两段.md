@@ -87,9 +87,9 @@ Ticket 02、03（完整生成器，preview 需生成真实 SQL）、09（hitl �
 `TraceSpanTest` 基线口径 1）；`run_eval` PASS（15/15、49/49、探针 PASS）；
 `e2e_stub` PASS（静默错 0、反例不符 0）；`verify_traces` 31/31（基线 11）；`verify_session` 16/16；`verify_explain` 40/40。
 
-延迟 67.8 / 69.9 ms（连测两次）——比 Ticket 11 的 49.2ms 高约 20ms，但本票对 ask 链路的改动只是**把同一段代码拆成方法**
-（span 数仍是 11、无新增 I/O），判断是机器负载（本轮同时跑着 MySQL/StarRocks/Kafka/Flink 与 mvn）而非代码回归；
-要坐实可回退到 `bb2749c` 再测一轮，本轮没做。
+延迟：开发中连测两次都是 67.8 / 69.9 ms（比 Ticket 11 的 49.2ms 高约 20ms），但归档时（`git_head=f48012e`、`dirty_files=0`、
+mvn 已退出）测到 **51.3 ms** —— 说明那 20ms 是同时跑着 mvn/容器的机器负载，不是代码回归。本票对 ask 链路的改动
+只是把同一段代码拆成方法，span 数仍是 11、无新增 I/O。
 
 **票面偏差（5 条，都是把含糊处定死，不是缩水）**
 

@@ -75,7 +75,7 @@
 - **span 基线仍是 11**：`TraceSpan` 加 `inAskBaseline` 标志，`hitl_preview`/`hitl_execute` 不进普通问数基线；`SpanStatus` 加 `PREVIEW`，`REPLAN` 首次真正启用
 - **`AskResponse` 加 `previewId`/`edits`/`structuralChanges`**；`GET /api/health/hitl` 暴露存活快照数、TTL、可编辑面
 - 验收 `qa/verify_hitl.py` **62/62**：预览零数据行、预览不污染多轮上下文、改值生效（15604.97→20324.53）、注入串只落在 params、改白名单外维度被闸门①当场拦（证明闸门真重跑）、结构变更 REPLAN、假 previewId 明确拒绝、环比问题预览→执行仍带环比结论
-- 测试 **148/148**（新增 11）；`run_eval`/`e2e_stub`/`verify_traces`(11)/`verify_session`/`verify_explain` 全绿；延迟 67.8/69.9ms（比 T11 高约 20ms，判断为机器负载，未做回退对照）
+- 测试 **148/148**（新增 11）；`run_eval`/`e2e_stub`/`verify_traces`(11)/`verify_session`/`verify_explain` 全绿；延迟 **51.3ms**（归档口径；开发中测到 67.8/69.9ms 是 mvn 与容器同时在跑的负载差，不是回归）
 - 边界：快照在进程内存（重启即丢）；TTL 600 秒内可多次执行，每次重跑闸门；execute 不重跑改写；`PREVIEW`/`REPLAN` 是第三、第四态，二分统计要显式处理
 
 ### v2.17（Ticket 11 解释 + 报告）
