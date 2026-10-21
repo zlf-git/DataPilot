@@ -9,7 +9,7 @@ import java.util.List;
  *
  * <p>Ticket 01 基础结构：question + metrics + dimensions + filters + orderBy + limit，
  * 够单指标聚合 + 单表 + 等值过滤（Q1）。selectMode/ratio 由 Ticket 03 引入，
- * timeRange 由 04 引入，复合指标计算由 05 引入。
+ * timeRange（近 N 天，半开区间）由 04 引入，复合指标计算由 05 引入。
  */
 public class QueryIr {
 
@@ -43,6 +43,12 @@ public class QueryIr {
      */
     private RatioRef ratio;
 
+    /**
+     * 时间窗口（Ticket 04）：「近 N 天」类问题用相对窗口声明，生成器展开半开区间
+     * {@code dt > ? AND dt <= ?}，anchor 取数据 MAX(dt) 而非 now()。
+     */
+    private TimeRange timeRange;
+
     public String getQuestion() {
         return question;
     }
@@ -65,6 +71,14 @@ public class QueryIr {
 
     public void setRatio(RatioRef ratio) {
         this.ratio = ratio;
+    }
+
+    public TimeRange getTimeRange() {
+        return timeRange;
+    }
+
+    public void setTimeRange(TimeRange timeRange) {
+        this.timeRange = timeRange;
     }
 
     public List<MetricRef> getMetrics() {

@@ -56,13 +56,16 @@ public class PromptBuildStep implements AgentStep {
                 - metrics：指标 metricId 数组。AGG 必填；DETAIL 必须为空
                 - dimensions：维度字段数组。DETAIL 必填；AGG 里非空表示「按该维度分组」
                 - filters：{field, op, value}，op 只能是 EQ/IN/LIKE/GT/GE/LT/LE（禁止 BETWEEN）
+                - timeRange：只用于「近 N 天 / 最近 N 天」这类相对窗口，格式 {relativeWindow:"LAST_N_DAYS", days:N}。
+                  具体起止日期由系统按数据最新日推算，你不要自己算日期、不要填 anchor，
+                  也不要在 filters 里再写 dt 条件（两者只能二选一）
                 - orderBy：{field, direction}，field 可写 metricId（按聚合值排序）或维度字段名
                 - limit：只要 TopN 时才给整数，其余留空
                 - ratio：只有「A 占 B 的比例」这类占比问题才填 {numerator, denominator}，否则留空
 
                 ## 日期归一化（必须遵守）
-                1. 只说「10月19日」没写年份 → 补成今年 %d，输出 yyyy-MM-dd
-                2. 「今天/昨天/最近/近7天」没落到具体日期 → 以数据最新日为准，不要用系统当前日期
+                1. 只说「10月19日」没写年份 → 补成今年 %d，输出 yyyy-MM-dd，放进 filters 的 dt EQ 条件
+                2. 「今天/昨天/最近/近7天」没落到具体日期 → 用 timeRange（LAST_N_DAYS + days），不要用系统当前日期硬算
                 3. 所有 dt 过滤值都输出完整 yyyy-MM-dd 字符串
                 """.formatted(today, today.getYear(), today.getYear());
     }

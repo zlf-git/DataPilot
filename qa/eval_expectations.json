@@ -14,8 +14,8 @@
       "question": "近7天累计支付订单数是多少？",
       "status": "OK",
       "rows": [{ "paid_order_cnt": 69 }],
-      "sqlMust": ["LIMIT"],
-      "caliberPending": "Ticket 04：IR 无 timeRange，值正确仅因表内恰好 7 天数据，数据延长后即偏"
+      "sqlMust": ["dt > ?", "dt <= ?", "LIMIT"],
+      "window": { "days": 7, "from": "2026-10-12", "anchor": "2026-10-19" }
     },
     {
       "no": 3,
@@ -92,32 +92,32 @@
       "question": "近7天GMV最高的渠道是哪个？",
       "status": "OK",
       "rows": [{ "channel_name": "APP", "gmv_channel": 138821.73 }],
-      "sqlMust": ["GROUP BY channel_name", "ORDER BY gmv_channel DESC", "LIMIT 1"],
-      "caliberPending": "Ticket 04：无 timeRange"
+      "sqlMust": ["dt > ?", "dt <= ?", "GROUP BY channel_name", "ORDER BY gmv_channel DESC", "LIMIT 1"],
+      "window": { "days": 7, "from": "2026-10-12", "anchor": "2026-10-19" }
     },
     {
       "no": 12,
       "question": "近7天GMV最高的大区是哪个？",
       "status": "OK",
       "rows": [{ "region": "华东", "gmv_region": 254466.85 }],
-      "sqlMust": ["GROUP BY region", "ORDER BY gmv_region DESC", "LIMIT 1"],
-      "caliberPending": "Ticket 04：无 timeRange"
+      "sqlMust": ["dt > ?", "dt <= ?", "GROUP BY region", "ORDER BY gmv_region DESC", "LIMIT 1"],
+      "window": { "days": 7, "from": "2026-10-12", "anchor": "2026-10-19" }
     },
     {
       "no": 13,
       "question": "近7天销售额最高的商品类目是哪个？金额多少？",
       "status": "OK",
       "rows": [{ "category_name": "电脑外设", "sale_amount_product": 293469.91 }],
-      "sqlMust": ["GROUP BY category_name", "ORDER BY sale_amount_product DESC", "LIMIT 1"],
-      "caliberPending": "Ticket 04：无 timeRange"
+      "sqlMust": ["dt > ?", "dt <= ?", "GROUP BY category_name", "ORDER BY sale_amount_product DESC", "LIMIT 1"],
+      "window": { "days": 7, "from": "2026-10-12", "anchor": "2026-10-19" }
     },
     {
       "no": 14,
       "question": "近7天里总GMV最高的是哪一天？",
       "status": "OK",
       "rows": [{ "dt": "2026-10-16", "gmv_total": 66184.5 }],
-      "sqlMust": ["GROUP BY dt", "ORDER BY gmv_total DESC", "LIMIT 1"],
-      "caliberPending": "Ticket 04：无 timeRange（stub 已由 01c 的 DETAIL 形态改为 AGG）"
+      "sqlMust": ["dt > ?", "dt <= ?", "GROUP BY dt", "ORDER BY gmv_total DESC", "LIMIT 1"],
+      "window": { "days": 7, "from": "2026-10-12", "anchor": "2026-10-19" }
     },
     {
       "no": 15,

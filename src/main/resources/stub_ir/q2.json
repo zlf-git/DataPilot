@@ -7,6 +7,10 @@
         "metricId": "paid_order_cnt"
       }
     ],
+    "timeRange": {
+      "relativeWindow": "LAST_N_DAYS",
+      "days": 7
+    },
     "selectMode": "AGG"
   }
 }

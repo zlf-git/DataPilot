@@ -5,6 +5,7 @@ Ticket 01c/03 端到端验收（诚实版）。
 判据（对齐 qa/eval_expectations.json）：
   链路可用   := sql 非空 且 answer 为空（真的执行了且没报错）
   SQL 形状   := SQL 里出现该题 sqlMust 列出的结构片段（DISTINCT / GROUP BY / ORDER BY xx DESC / LIMIT）
+  时间窗口   := window 声明的半开区间（dt &gt; from 且 dt &lt;= anchor、禁 BETWEEN、IR 回填 anchor == 数据 MAX(dt)）
   答对       := 链路可用 + 形状达标 + 结果行与期望集合一致
   显式拒绝   := sql 为空 且 answer 含该题 blocker 字样（未实现的题必须走这条）
   静默错     := 期望 BLOCKED 却执行出数，或 SQL 缺 sqlMust 结构 —— 看着成功实则错，必须为 0
@@ -78,6 +79,21 @@ def missing_sql(sql, must):
     return [m for m in must or [] if m.upper() not in upper]
 
 
+def window_check(sql, params, ir, win):
+    """Ticket 04 时间窗口断言：半开区间 dt > from AND dt <= anchor，禁 BETWEEN，anchor 由 MAX(dt) 回填"""
+    issues = []
+    if 'BETWEEN' in (sql or '').upper():
+        issues.append('SQL 出现 BETWEEN（闭区间会多取一天）')
+    ps = [str(x) for x in (params or [])]
+    for label, want in (('下界', win['from']), ('锚点', win['anchor'])):
+        if want not in ps:
+            issues.append('参数缺%s %s（实际 %s）' % (label, want, ps))
+    got_anchor = ((ir or {}).get('timeRange') or {}).get('anchor')
+    if got_anchor != win['anchor']:
+        issues.append('IR 回填 anchor=%r ≠ 数据最新日 %s' % (got_anchor, win['anchor']))
+    return issues
+
+
 def main():
     with open(EXPECT_FILE, encoding='utf-8') as fp:
         expect = json.load(fp)['items']
@@ -103,6 +119,8 @@ def main():
 
         verdict, blame, note = '', '', ''
         lack = missing_sql(sql, it.get('sqlMust')) if ran else []
+        if ran and it.get('window'):
+            lack += window_check(sql, r.get('params'), ir, it['window'])
 
         if ran:
             if status == 'BLOCKED':
@@ -110,7 +128,7 @@ def main():
                 note = '本应显式拒绝，却执行了：' + sql[:70]
                 st['silent'] += 1
             elif lack:
-                verdict, blame = 'ENGINE_BUG', 'Ticket 03'
+                verdict, blame = 'ENGINE_BUG', 'Ticket 03/04'
                 note = 'SQL 缺结构 %s：%s' % (','.join(lack), sql[:70])
                 st['bug'] += 1
             else:

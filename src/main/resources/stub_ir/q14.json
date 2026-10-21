@@ -19,6 +19,10 @@
       }
     ],
     "limit": 1,
+    "timeRange": {
+      "relativeWindow": "LAST_N_DAYS",
+      "days": 7
+    },
     "selectMode": "AGG"
   }
 }

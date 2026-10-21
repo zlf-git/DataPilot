@@ -200,3 +200,17 @@ public QueryIr ask(String question) {
 ### 6.3 未实现语义的显式拒绝（与 01c 失败契约一致）
 
 Prompt 里让 LLM 照常输出 `ratio{分子,分母}` 声明占比意图，但生成器遇到 `ratio` 会**显式拒绝**（「占比计算未实现（Ticket 05）」），不会降级成普通聚合返回各渠道GMV——降级会静默出错值。
+
+### 6.4 时间窗口（Ticket 04）
+
+「近 N 天 / 最近 N 天」这类相对窗口不再让 LLM 自己算日期，改为输出相对窗口声明：
+
+```json
+{"timeRange": {"relativeWindow": "LAST_N_DAYS", "days": 7}}
+```
+
+规则：
+
+1. **不要填 `anchor`**，也不要自己推算起止日期——锚点由系统按数据 `MAX(dt)` 解析后回填；
+2. `timeRange` 与 `filters` 里的 `dt` 条件**只能二选一**（同时出现生成器直接拒绝）；
+3. 具体某一天（「10月19日」）仍走 `filters` 的 `dt EQ`，相对区间（「近7天」）才走 `timeRange`。

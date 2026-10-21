@@ -23,6 +23,7 @@ BASE = os.path.abspath(os.path.join(
 
 VALID_OPS = {'EQ', 'IN', 'LIKE', 'GT', 'GE', 'LT', 'LE'}
 VALID_MODES = {'AGG', 'DETAIL'}
+VALID_WINDOWS = {'LAST_N_DAYS', 'LAST_DAYS', 'RECENT_DAYS'}
 
 
 def get_json(path):
@@ -98,6 +99,18 @@ def check_ir(ir, metric_ids, field_names, orderby_style):
     limit = ir.get('limit')
     if limit is not None:
         assert isinstance(limit, int) and limit > 0, 'limit 必须正整数'
+
+    # timeRange（Ticket 04）：近 N 天相对窗口；anchor 由数据 MAX(dt) 解析，stub 里不应预填
+    tr = ir.get('timeRange')
+    if tr is not None:
+        assert isinstance(tr, dict), 'timeRange 必须是对象'
+        win = tr.get('relativeWindow')
+        assert win in VALID_WINDOWS, '非法 relativeWindow: %r' % win
+        days = tr.get('days')
+        assert isinstance(days, int) and 1 <= days <= 366, 'timeRange.days 必须 1~366，当前 %r' % days
+        assert not tr.get('anchor'), 'timeRange.anchor 应由数据 MAX(dt) 回填，stub 不应预填'
+        assert not any((f.get('field') or '').lower() == 'dt' for f in filters), \
+            'timeRange 与 dt 过滤不能并存（生成器会显式拒绝）'
 
 
 def main():

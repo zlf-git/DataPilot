@@ -174,3 +174,26 @@ public record OrderBy(
 2. `limit` 为空时由生成器注入 `gate_config.max_rows`（默认 1000），不是无限返回。
 3. DETAIL 的表由 `dimension_def` 的 field→table 反查：多个维度/过滤字段取候选表交集，交集为空报「没有共同所属的表」，多于一张报「候选表 [...]，请补充更具体的维度」——**不猜表**。
 4. `FilterOp` 只保留 `EQ/IN/LIKE/GT/GE/LT/LE`，BETWEEN 已删（闭区间与 04 的半开区间冲突）。参数个数：EQ/GT/GE/LT/LE 各 1 个，IN 按元素数展开，LIKE 绑 `%value%`。
+
+---
+
+## 8. Ticket 04 新增字段：timeRange（时间窗口）
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `timeRange.relativeWindow` | `LAST_N_DAYS` | 否 | 相对窗口类型；只支持「近 N 天」，其余取值显式拒绝（不做猜测） |
+| `timeRange.days` | int | 是（有 timeRange 时） | 窗口天数（含锚点当天），1~366；越界显式拒绝 |
+| `timeRange.anchor` | `yyyy-MM-dd` | 否 | **解析结果而非模型输入**：由数据 `MAX(dt)` 算出后回填；模型若给了值与数据最新日不一致直接拒绝 |
+
+生成契约（**全文禁 BETWEEN**）：
+
+```sql
+-- timeRange{relativeWindow:"LAST_N_DAYS", days:7} + anchor=2026-10-19
+WHERE dt > ? AND dt <= ?        -- 参数：['2026-10-12', '2026-10-19']
+```
+
+1. **为什么不用 BETWEEN**：`BETWEEN '10-12' AND '10-19'` 是闭区间，会取 10-12~10-19 共 **8** 天，与「近 7 天」不符（审计 P0#1）。半开下界 + 闭合上界才是 7 天。
+2. **为什么锚点取 `MAX(dt)` 而不是 `now()`**：数据滞后一天时 `now()` 会把窗口整体前移，最后一天落在空分区，GMV 凭空少一天。锚点锚在数据上，口径才稳定可复现。
+3. **锚点失败即拒绝**：表无 `dt` 列 / `dt` 全空 / 引擎不可用 → 「无法确定时间锚点」显式报错，**绝不回退 now()**（回退是无声的口径错误）。
+4. **与 dt 过滤互斥**：IR 同时给 `timeRange` 和 `field=dt` 的 filter 时显式拒绝——两套时间约束并存会让「近 7 天」与「某一天」互相打架。
+5. 缓存：`TimeAnchorProvider`（Caffeine TTL 60s 按表缓存），`RecallStep` 预热一次，一次问数只查一次库。

@@ -7,11 +7,13 @@ import com.zlf.datapilot.ir.MetricRef;
 import com.zlf.datapilot.ir.OrderBy;
 import com.zlf.datapilot.ir.QueryIr;
 import com.zlf.datapilot.ir.SelectMode;
+import com.zlf.datapilot.ir.TimeRange;
 import com.zlf.datapilot.knowledge.MetadataRepository;
 import com.zlf.datapilot.knowledge.OntologyCache;
 import com.zlf.datapilot.knowledge.model.MetricDef;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -37,9 +39,13 @@ import java.util.stream.Collectors;
  * </ul>
  *
  * <p><b>失败契约</b>（01c 测试报告 P2-1）：IR 里出现本票尚未实现的语义
- * （占比计算 / timeRange / 多指标）或结构性冲突（DETAIL 带指标、排序字段不在结果列、
- * 维度字典反查歧义）一律显式抛「未实现（Ticket xx）」或具体原因，<b>禁止静默忽略</b>——
- * 静默丢维度会生成「全表汇总」，SQL 能跑、有行、answer 为空，数值全错却看着成功。
+ * （占比计算 / 多指标）或结构性冲突（DETAIL 带指标、排序字段不在结果列、
+ * 维度字典反查歧义、时间窗口与 dt 过滤重复声明）一律显式抛「未实现（Ticket xx）」或具体原因，
+ * <b>禁止静默忽略</b>——静默丢维度会生成「全表汇总」，SQL 能跑、有行、answer 为空，数值全错却看着成功。
+ *
+ * <p>时间窗口（Ticket 04）：{@code timeRange} 展开成<b>半开区间</b> {@code dt > ? AND dt <= ?}，
+ * 参数为 {@code anchor-days} 与 {@code anchor}，anchor 取数据 {@code MAX(dt)}；全文禁 BETWEEN
+ * （BETWEEN 闭区间会把第 8 天也算进来）。
  */
 @Component
 public class IrToSqlConverter {
@@ -49,12 +55,23 @@ public class IrToSqlConverter {
 
     private static final int DEFAULT_MAX_ROWS = 1000;
 
+    /** 时间字段（窗口锚定的列） */
+    private static final String DT_FIELD = "dt";
+
+    /** 支持的时间窗口类型：统一走「近 N 天」 */
+    private static final Set<String> SUPPORTED_WINDOWS = Set.of("LAST_N_DAYS", "LAST_DAYS", "RECENT_DAYS");
+
+    /** 窗口天数上限（超过一年视为误填） */
+    private static final int MAX_WINDOW_DAYS = 366;
+
     private final MetadataRepository repo;
     private final OntologyCache cache;
+    private final TimeAnchorProvider anchorProvider;
 
-    public IrToSqlConverter(MetadataRepository repo, OntologyCache cache) {
+    public IrToSqlConverter(MetadataRepository repo, OntologyCache cache, TimeAnchorProvider anchorProvider) {
         this.repo = repo;
         this.cache = cache;
+        this.anchorProvider = anchorProvider;
     }
 
     public SqlCommand convert(QueryIr ir) {
@@ -121,7 +138,7 @@ public class IrToSqlConverter {
                 .append(" FROM ").append(tableName);
 
         List<Object> params = new ArrayList<>();
-        appendWhere(sql, ir, params);
+        appendWhere(sql, ir, params, tableName);
         if (!dims.isEmpty()) {
             sql.append(" GROUP BY ").append(dims.stream()
                     .map(DimensionRef::getField)
@@ -161,7 +178,7 @@ public class IrToSqlConverter {
                 .append(" FROM ").append(tableName);
 
         List<Object> params = new ArrayList<>();
-        appendWhere(sql, ir, params);
+        appendWhere(sql, ir, params, tableName);
 
         // DISTINCT 语义下只能按结果列排序（按未选中的列排序在多数引擎直接报错，且语义不明）
         appendOrderBy(sql, ir.getOrderBy(), new LinkedHashSet<>(columns));
@@ -217,15 +234,62 @@ public class IrToSqlConverter {
 
     // ==================== 公共片段 ====================
 
-    private void appendWhere(StringBuilder sql, QueryIr ir, List<Object> params) {
-        if (ir.getFilters() == null || ir.getFilters().isEmpty()) {
-            return;
+    private void appendWhere(StringBuilder sql, QueryIr ir, List<Object> params, String table) {
+        List<Filter> filters = ir.getFilters() == null ? List.of() : ir.getFilters();
+
+        // 同一层时间约束只能声明一次：timeRange + dt 过滤并存会让「近 7 天」与「某天」互相打架，语义不明
+        if (ir.getTimeRange() != null
+                && filters.stream().anyMatch(f -> f.getField() != null && DT_FIELD.equalsIgnoreCase(f.getField()))) {
+            throw new IllegalArgumentException(
+                    "timeRange 与 " + DT_FIELD + " 过滤条件同时存在（Ticket 04）：时间范围只能声明一次，请只用其中一种");
         }
+
         List<String> conditions = new ArrayList<>();
-        for (Filter f : ir.getFilters()) {
+        for (Filter f : filters) {
             conditions.add(buildCondition(f, params));
         }
-        sql.append(" WHERE ").append(String.join(" AND ", conditions));
+        if (ir.getTimeRange() != null) {
+            conditions.addAll(buildTimeRange(ir.getTimeRange(), table, params));
+        }
+        if (!conditions.isEmpty()) {
+            sql.append(" WHERE ").append(String.join(" AND ", conditions));
+        }
+    }
+
+    /**
+     * 时间窗口展开（Ticket 04 任务 3）：{@code dt > ? AND dt <= ?}，参数 {@code anchor-days} / {@code anchor}。
+     *
+     * <p>为什么不用 BETWEEN：BETWEEN 是闭区间，{@code BETWEEN '10-12' AND '10-19'} 会取到
+     * 10-12~10-19 共 <b>8</b> 天，与「近 7 天」不符（审计 P0#1）。半开下界 + 闭合上界才是 7 天。
+     */
+    private List<String> buildTimeRange(TimeRange tr, String table, List<Object> params) {
+        String window = tr.getRelativeWindow() == null ? "LAST_N_DAYS" : tr.getRelativeWindow().trim().toUpperCase();
+        if (!SUPPORTED_WINDOWS.contains(window)) {
+            throw new IllegalArgumentException("不支持的时间窗口类型：" + tr.getRelativeWindow()
+                    + "（Ticket 04 仅支持 LAST_N_DAYS，窗口由数据最新日往前推）");
+        }
+        Integer days = tr.getDays();
+        if (days == null) {
+            throw new IllegalArgumentException("时间窗口缺少 days（Ticket 04）：「近 N 天」必须给出 N");
+        }
+        if (days < 1 || days > MAX_WINDOW_DAYS) {
+            throw new IllegalArgumentException("时间窗口天数非法：" + days + "（允许 1~" + MAX_WINDOW_DAYS + "）");
+        }
+
+        // 锚点取数据 MAX(dt)，不取 now()：数据滞后时 now() 会把窗口整体前移、最后一天变空分区
+        String anchorStr = anchorProvider.anchor(table);
+        LocalDate anchor = LocalDate.parse(anchorStr);
+        if (tr.getAnchor() != null && !tr.getAnchor().isBlank() && !anchorStr.equals(tr.getAnchor().trim())) {
+            throw new IllegalArgumentException("时间锚点与数据最新日期不一致（Ticket 04）：IR 给的 anchor="
+                    + tr.getAnchor() + "，数据 MAX(" + DT_FIELD + ")=" + anchorStr);
+        }
+        // 回填解析结果，便于响应体回显「实际用的窗口」
+        tr.setAnchor(anchorStr);
+
+        LocalDate from = anchor.minusDays(days);
+        params.add(from.toString());
+        params.add(anchorStr);
+        return List.of(DT_FIELD + " > ?", DT_FIELD + " <= ?");
     }
 
     /** 参数分派：EQ 1 个 / IN n 个 / LIKE 包 % / GT/GE/LT/LE 各 1 个（Ticket 03 任务 7） */
