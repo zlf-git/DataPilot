@@ -76,7 +76,7 @@
   **不进 gate_config** —— 配置项只留给「因环境而异」的参数，不留给「判断标准」（审计 P1#18）
 - **E2 验收公式**：`评测集.md` §3.1 写死六层指标分母一律 15、闸门拦截率正常态目标 0%、平均延迟含 LLM 且 stub/真模型分开报
 - **交接项落地**：新增 `SchemaDrift` + `GET /api/health/drift`（元数据 ↔ 真实表/列巡检），Ticket 07 的 `listTables()` 终于有调用方
-- 数据：`mvn -o test` **207/207**、`check_docs_consistency` 25/25、`eval` PASS 15/15（54.6 ms、拦截率 0%），其余脚本无回归
+- 数据：`mvn -o test` **207/207**、`check_docs_consistency` 25/25、`eval` PASS 15/15（61.7 ms，G1 两条自检带来的开销 54.6→61.7、拦截率 0%），其余脚本无回归
 
 ### v2.24（Ticket 15 代价公式补洞）
 

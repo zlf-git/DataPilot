@@ -75,7 +75,7 @@ Ticket 02、03、04、05（口径定稿后才写注释）+ 15（gate_config 参�
 | `mvn -o test` | **207/207**（196 + 6 例 `ResultCheckGateTest` + 5 例 `SchemaDriftTest`） |
 | `qa/check_docs_consistency.py` | **25/25 全绿** |
 | `GET /api/health/drift`（活库） | `{"engine":"starrocks","consistent":true,...}`，4 张表零漂移 |
-| `eval/run_eval.py` | PASS 15/15、49/49、平均延迟 **54.6 ms**、闸门拦截率 0% |
+| `eval/run_eval.py` | PASS 15/15、49/49、平均延迟 **61.7 ms**（G1 新增两条自检后 54.6 → 61.7）、闸门拦截率 0%，基线已重归档 `git_head=660b3cb`、`dirty_files=0` |
 | `e2e_stub` / `verify_hitl` / `verify_traces` / `verify_session` / `verify_explain` / `verify_cost_gate` | PASS 15/15 · 76/76 · 31/31 · 21/21 · 142/142 · 17/17（G1 新增告警未误伤任何既有题） |
 
 ## 5. 票面偏差（2 条）

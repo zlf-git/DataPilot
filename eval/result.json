@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "ticket": "06b",
-  "generated_at": "2026-10-21T20:42:42+08:00",
+  "generated_at": "2026-10-21T20:45:47+08:00",
   "host": "http://127.0.0.1:18080",
   "golden_set": {
     "path": "eval\\golden_set.json",
@@ -11,8 +11,8 @@
     "tolerance": 0.011
   },
   "code": {
-    "git_head": "ee2ad62 Ticket 15：代价公式补洞（三因子 max(1,·) + max_complexity 拒绝点）",
-    "dirty_files": 12
+    "git_head": "660b3cb Ticket 16：文档与 seed 收口（D1/C4/C5/G1/E2 + 07 交接的巡检）",
+    "dirty_files": 0
   },
   "env": {
     "health": {
@@ -27,7 +27,7 @@
     "accuracy": 1.0,
     "table_hit_rate": 1.0,
     "field_hit_rate": 1.0,
-    "avg_latency_ms": 76.7,
+    "avg_latency_ms": 61.7,
     "syntax_pass_rate": 1.0,
     "gate_block_rate": 0.0,
     "sql_shape_score": 1.0,
@@ -87,8 +87,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 230,
-      "trace_id": "e5201fc8e97b4828891f64d0a99618fb",
+      "cost_ms": 126,
+      "trace_id": "c4d29db148e04edca01da28cbc846f08",
       "answer": "gmv_total = 53042.41",
       "rows": [
         {
@@ -139,8 +139,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 64,
-      "trace_id": "bb08fe7159154c9aa01bd6c5c695f4e7",
+      "cost_ms": 71,
+      "trace_id": "7b9039918a444dc9b7d455be3b76a32a",
       "answer": "paid_order_cnt = 69",
       "rows": [
         {
@@ -187,8 +187,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 63,
-      "trace_id": "908026986bdd4aa4a696433d84493cfa",
+      "cost_ms": 52,
+      "trace_id": "e1fe709fe29d4cad8834508be09bb82f",
       "answer": "gmv_channel = 15604.97",
       "rows": [
         {
@@ -234,8 +234,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 71,
-      "trace_id": "1a155346cbdc4da0b9756f209ee92507",
+      "cost_ms": 51,
+      "trace_id": "df7fae4af04b4ee59c87880f6f7731b7",
       "answer": "共 3 行：上海、江苏、浙江",
       "rows": [
         {
@@ -287,8 +287,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 69,
-      "trace_id": "71646ad812f04cb486b1ed08882d79f7",
+      "cost_ms": 47,
+      "trace_id": "c1053d20db424fc387e420e339ee3021",
       "answer": "共 2 行：4K显示器、机械键盘",
       "rows": [
         {
@@ -338,8 +338,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 77,
-      "trace_id": "cf058416b6174a51984478787bbc6299",
+      "cost_ms": 46,
+      "trace_id": "42acf7dd3ee14db1b9a61f9138f057b6",
       "answer": "共 3 行（channel_name → pay_conversion_rate）：APP=0.1、小程序=0.1、网页=0.075",
       "rows": [
         {
@@ -395,8 +395,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 61,
-      "trace_id": "b41c44eec818432ca97dd9ae80d3ef35",
+      "cost_ms": 52,
+      "trace_id": "3c4197f7db5842399ede5d3a7976b88d",
       "answer": "共 1 行（province_name → gmv_region）：上海=15695.05",
       "rows": [
         {
@@ -444,8 +444,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 65,
-      "trace_id": "d626feba1aa54c2eb709ce9e0ab14e66",
+      "cost_ms": 56,
+      "trace_id": "e0e593d899df4303ba66437134c58975",
       "answer": "共 3 行（product_name → sale_cnt_product）：4K显示器=4、人体工学椅=3、机械键盘=3",
       "rows": [
         {
@@ -500,8 +500,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 58,
-      "trace_id": "0037b0a28d65477ba0d9ba4d631c7e34",
+      "cost_ms": 62,
+      "trace_id": "2fffd93eb1c14bb99776b12f52aaa145",
       "answer": "pay_rate = 0.9",
       "rows": [
         {
@@ -548,8 +548,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 67,
-      "trace_id": "2cef2584d92a479dbf5e638addcc6b1e",
+      "cost_ms": 57,
+      "trace_id": "4e5a4129bc6d4673b383d0fcf3d31a34",
       "answer": "order_cnt_region = 2",
       "rows": [
         {
@@ -601,8 +601,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 71,
-      "trace_id": "52045c650e2445b1bb908d7e555de557",
+      "cost_ms": 64,
+      "trace_id": "363453504f544c2b9bc94380d608d1d4",
       "answer": "共 1 行（channel_name → gmv_channel）：APP=138821.73",
       "rows": [
         {
@@ -655,8 +655,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 63,
-      "trace_id": "19e6f3bccd204dbf8af76ad2d543a7d4",
+      "cost_ms": 69,
+      "trace_id": "45adf72043da414a91349b79d978b137",
       "answer": "共 1 行（region → gmv_region）：华东=254466.85",
       "rows": [
         {
@@ -709,8 +709,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 63,
-      "trace_id": "5cf56ede8f9a41c4b5e53b73f2638922",
+      "cost_ms": 56,
+      "trace_id": "6473b810ad06491bbdec1d11203cee2e",
       "answer": "共 1 行（category_name → sale_amount_product）：电脑外设=293469.91",
       "rows": [
         {
@@ -763,8 +763,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 60,
-      "trace_id": "3b50646542794aa7bb0a518cda16f702",
+      "cost_ms": 55,
+      "trace_id": "38d2b922b6fa421789bff7d94e310d07",
       "answer": "共 1 行（dt → gmv_total）：2026-10-16=66184.50",
       "rows": [
         {
@@ -815,8 +815,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 69,
-      "trace_id": "c1796de553714389b9f6f3db4dfc7c7b",
+      "cost_ms": 62,
+      "trace_id": "6c9b8a2c146a46e98b3581211515081e",
       "answer": "共 3 行（channel_name → gmv_channel_ratio）：APP=0.3832、网页=0.3226、小程序=0.2942",
       "rows": [
         {
