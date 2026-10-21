@@ -40,7 +40,7 @@ Ticket 01
 | 文件 | 职责 |
 |---|---|
 | `agent/trace/SpanType.java` | `operation/llm/sql/gate/hitl` 五类（值即落库字符串） |
-| `agent/trace/TraceSpan.java` | 全链路 9 个 span 目录，**「一次成功运行该有多少 span」的唯一真源**（`expectedPerSuccess()`） |
+| `agent/trace/TraceSpan.java` | 全链路 span 目录（本票交付时 9 个；Ticket 11 加了 `explain`/`report` 变 11），**「一次成功运行该有多少 span」的唯一真源**（`expectedPerSuccess()`） |
 | `agent/trace/RunStatus.java` | `SUCCESS/FAILED/REJECTED/PREVIEW` + 判定逻辑 `of(ctx)` |
 | `agent/trace/SpanStatus.java` | `SUCCESS/FAILED/SKIPPED/REPLAN`（span 级，与 run 级分开） |
 | `agent/trace/AgentTraceRepository.java` | 写 `agent_run`/`agent_step` + 三个查询（列表/单条/明细） |
@@ -78,7 +78,7 @@ Ticket 01
 | 项 | 结果 |
 |---|---|
 | `mvn -o test` | **94/94 全绿，skipped=0**（新增 `TraceStepTest` 10 / `RunStatusTest` 5 / `TraceSpanTest` 5） |
-| `qa/verify_traces.py` | **PASS 31/31**：单日题 + 窗口题各 9 span = 基线 9；`llm`/`sql`/`gate` 各≥1；`cost=0.000700`；`stepOrder=[1..9]`；窗口题 `final_sql` 含 `dt > ?` 与 `dt <= ?`；两次运行 traceId 不同、sessionId 能过滤到 2 条；不存在的 traceId → 404 |
+| `qa/verify_traces.py` | **PASS 31/31**：单日题 + 窗口题各 9 span = 基线 9（当时口径；Ticket 11 后基线变 11，脚本自动跟随）；`llm`/`sql`/`gate` 各≥1；`cost=0.000700`；`stepOrder=[1..9]`；窗口题 `final_sql` 含 `dt > ?` 与 `dt <= ?`；两次运行 traceId 不同、sessionId 能过滤到 2 条；不存在的 traceId → 404 |
 | 直查 MySQL（`data_agent`） | `agent_run`：SUCCESS 3 / FAILED 4，均价 0.0007 / 0.000525 元；`agent_step`：operation 23 / llm 6（token 3600）/ gate 11 / sql 3 |
 | 异常路径 | 空白问题 → `FAILED` + 0 span；未命中意图 → `FAILED` + 4 span（停在 `llm_generate`）；反例跨表维度 → `FAILED` + 6 span（停在 `ir_to_sql`，`errorMsg` 记全了原因） |
 | 回归 | `run_eval` PASS（15/15、形状 49/49、窗口探针 PASS）；`verify_stub_ir` 15/15+2；`e2e_stub` PASS（反例 6/6、行序 3/3、探针 157702.85） |

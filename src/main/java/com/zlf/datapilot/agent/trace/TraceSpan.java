@@ -40,7 +40,13 @@ public enum TraceSpan {
     EXECUTE("execute", SpanType.SQL),
 
     /** 闸门阶段 3：结果层（结果自检，只警告不拒绝） */
-    GATE_RESULT("gate_result", SpanType.GATE);
+    GATE_RESULT("gate_result", SpanType.GATE),
+
+    /** 解释（Ticket 11）：把结果说成一句人话 + 定图表类型 */
+    EXPLAIN("explain", SpanType.OPERATION),
+
+    /** 报告（Ticket 11）：按结果行生成 ECharts HTML */
+    REPORT("report", SpanType.OPERATION);
 
     private final String code;
     private final SpanType type;

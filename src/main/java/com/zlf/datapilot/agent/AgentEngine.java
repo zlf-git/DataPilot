@@ -4,8 +4,10 @@ import com.zlf.datapilot.agent.gate.Gate;
 import com.zlf.datapilot.agent.gate.GateChain;
 import com.zlf.datapilot.agent.gate.GateResult;
 import com.zlf.datapilot.agent.session.SessionStore;
+import com.zlf.datapilot.agent.step.ExplainStep;
 import com.zlf.datapilot.agent.step.PromptBuildStep;
 import com.zlf.datapilot.agent.step.RecallStep;
+import com.zlf.datapilot.agent.step.ReportStep;
 import com.zlf.datapilot.agent.step.RewriteStep;
 import com.zlf.datapilot.agent.step.SqlExecuteStep;
 import com.zlf.datapilot.agent.trace.RunStatus;
@@ -48,6 +50,8 @@ public class AgentEngine {
     private final GateChain gateChain;
     private final IrToSqlConverter irToSqlConverter;
     private final SqlExecuteStep sqlExecuteStep;
+    private final ExplainStep explainStep;
+    private final ReportStep reportStep;
     private final TraceRecorder traceRecorder;
     private final SessionStore sessions;
 
@@ -58,6 +62,8 @@ public class AgentEngine {
                        GateChain gateChain,
                        IrToSqlConverter irToSqlConverter,
                        SqlExecuteStep sqlExecuteStep,
+                       ExplainStep explainStep,
+                       ReportStep reportStep,
                        TraceRecorder traceRecorder,
                        SessionStore sessions) {
         this.rewriteStep = rewriteStep;
@@ -67,6 +73,8 @@ public class AgentEngine {
         this.gateChain = gateChain;
         this.irToSqlConverter = irToSqlConverter;
         this.sqlExecuteStep = sqlExecuteStep;
+        this.explainStep = explainStep;
+        this.reportStep = reportStep;
         this.traceRecorder = traceRecorder;
         this.sessions = sessions;
     }
@@ -215,7 +223,14 @@ public class AgentEngine {
             }
         }
 
-        // ⑪ 记一轮会话：只记「真的生成了 SQL 并跑通」的轮次，
+        // ⑪ 解释（Ticket 11）：answer 已由闸门/环比填过就不覆盖，只补空的 + 定图表类型
+        trace.span(TraceSpan.EXPLAIN, "rows=" + ctx.getQueryResult().size(),
+                () -> explainStep.execute(ctx), c -> "chartType=" + c.getChartType());
+        // ⑫ 报告（Ticket 11）：按结果行渲染 ECharts HTML（series 数 = 行数）
+        trace.span(TraceSpan.REPORT, "chartType=" + ctx.getChartType(),
+                () -> reportStep.execute(ctx), c -> "htmlChars=" + len(c.getReportHtml()));
+
+        // ⑬ 记一轮会话：只记「真的生成了 SQL 并跑通」的轮次，
         // 失败/拒绝的轮次不进上下文 —— 否则下一轮「那环比呢」会补全到一个根本没答出来的问题上
         rememberRound(ctx);
         return ctx;

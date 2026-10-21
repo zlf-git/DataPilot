@@ -3,7 +3,8 @@
 Ticket 01c/03 端到端验收（诚实版）。
 
 判据（对齐 qa/eval_expectations.json）：
-  链路可用   := sql 非空 且 answer 为空（真的执行了且没报错）
+  链路可用   := sql 非空 且 status=SUCCESS（Ticket 11 起 answer 成功时也有内容，
+                判据从「answer 为空」改成显式 status；无 status 的老响应仍按旧口径）
   SQL 形状   := SQL 里出现该题 sqlMust 列出的结构片段（DISTINCT / GROUP BY / ORDER BY xx DESC / LIMIT）
   时间窗口   := window 声明的半开区间（dt &gt; from 且 dt &lt;= anchor、禁 BETWEEN、IR 回填 anchor == 数据 MAX(dt)）
                 ★ 硬规则（QA-04 P1-2）：窗口题**必须**断言 SQL 形状，值对拍不足以判别半开/闭区间
@@ -61,7 +62,14 @@ def ask(question):
 
 
 def executed(r):
-    return bool((r.get('sql') or '').strip()) and not (r.get('answer') or '').strip()
+    """真的执行出数：Ticket 11 起 answer 在成功时也有内容，判据改用显式 status 字段。
+    兼容老响应（无 status）：仍按「sql 非空且 answer 为空」判。"""
+    if not (r.get('sql') or '').strip():
+        return False
+    status = (r.get('status') or '').strip()
+    if status:
+        return status == 'SUCCESS'
+    return not (r.get('answer') or '').strip()
 
 
 def norm_cell(v):

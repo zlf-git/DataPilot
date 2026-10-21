@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "ticket": "06b",
-  "generated_at": "2026-10-21T15:32:33+08:00",
+  "generated_at": "2026-10-21T15:37:30+08:00",
   "host": "http://127.0.0.1:18080",
   "golden_set": {
     "path": "eval\\golden_set.json",
@@ -11,8 +11,8 @@
     "tolerance": 0.011
   },
   "code": {
-    "git_head": "38b2c29 Ticket 10：多轮 session（环比补全 + 前 7 天无数据如实返回）",
-    "dirty_files": 0
+    "git_head": "800279b 基线重归档：Ticket 10 后重跑 run_eval（git_head=38b2c29，dirty=0，PASS 15/15、49/49，延迟 59.3ms）",
+    "dirty_files": 11
   },
   "env": {
     "health": {
@@ -26,7 +26,7 @@
     "accuracy": 1.0,
     "table_hit_rate": 1.0,
     "field_hit_rate": 1.0,
-    "avg_latency_ms": 59.3,
+    "avg_latency_ms": 65.9,
     "syntax_pass_rate": 1.0,
     "gate_block_rate": 0.0,
     "sql_shape_score": 1.0,
@@ -86,9 +86,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 46,
-      "trace_id": "9156f1e6ad4c41269ffaee2c01d68916",
-      "answer": "",
+      "cost_ms": 204,
+      "trace_id": "7cace338adfd49a094636ac753715e49",
+      "answer": "gmv_total = 53042.41",
       "rows": [
         {
           "gmv_total": 53042.41
@@ -138,9 +138,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 66,
-      "trace_id": "9ff3e37db65b4516bf8a865afba77e1a",
-      "answer": "",
+      "cost_ms": 48,
+      "trace_id": "498cc13dc7a84ea682e4099608beb417",
+      "answer": "paid_order_cnt = 69",
       "rows": [
         {
           "paid_order_cnt": 69
@@ -186,9 +186,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 41,
-      "trace_id": "39358e5e8dbd4a649927dac3010e8909",
-      "answer": "",
+      "cost_ms": 44,
+      "trace_id": "5de1d348848b45bfa52b56a799f49638",
+      "answer": "gmv_channel = 15604.97",
       "rows": [
         {
           "gmv_channel": 15604.97
@@ -233,9 +233,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 81,
-      "trace_id": "cc9f8ac96ddc4dce8950e2456fc0c041",
-      "answer": "",
+      "cost_ms": 45,
+      "trace_id": "fbf0cd9410b5415f93b40f4ffe7a71e6",
+      "answer": "共 3 行：上海、江苏、浙江",
       "rows": [
         {
           "province_name": "上海"
@@ -286,9 +286,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 54,
-      "trace_id": "5a5fa44ca74f46719db0b6124296d486",
-      "answer": "",
+      "cost_ms": 139,
+      "trace_id": "e7a3b9f17247473382013552edb38130",
+      "answer": "共 2 行：4K显示器、机械键盘",
       "rows": [
         {
           "product_name": "4K显示器"
@@ -337,9 +337,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 50,
-      "trace_id": "503dbc8a91bd4d94a8ff316d77b05955",
-      "answer": "",
+      "cost_ms": 68,
+      "trace_id": "0d935a57cb714ad6ba6ad2d74b0e50a9",
+      "answer": "共 3 行（channel_name → pay_conversion_rate）：APP=0.1、小程序=0.1、网页=0.075",
       "rows": [
         {
           "channel_name": "APP",
@@ -394,9 +394,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 51,
-      "trace_id": "3aadbeff0a5b493481991de6571978a6",
-      "answer": "",
+      "cost_ms": 43,
+      "trace_id": "fd957f92e2364392b2c3a33e802049fa",
+      "answer": "共 1 行（province_name → gmv_region）：上海=15695.05",
       "rows": [
         {
           "province_name": "上海",
@@ -443,9 +443,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 179,
-      "trace_id": "7f13f54b58b14356a65417466bd7d9fb",
-      "answer": "",
+      "cost_ms": 48,
+      "trace_id": "189d38597f0c4a7fa737d3916959a3ba",
+      "answer": "共 3 行（product_name → sale_cnt_product）：4K显示器=4、人体工学椅=3、机械键盘=3",
       "rows": [
         {
           "product_name": "4K显示器",
@@ -500,8 +500,8 @@
         "结果自检=PASS"
       ],
       "cost_ms": 45,
-      "trace_id": "aa67b1a0b4024dcc8b3b4c117af2a8a8",
-      "answer": "",
+      "trace_id": "2022f209f46f4091b59b3387c61924e0",
+      "answer": "pay_rate = 0.9",
       "rows": [
         {
           "pay_rate": 0.9
@@ -547,9 +547,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 40,
-      "trace_id": "b9a53e9b9cf94d34b43e6964f07d34be",
-      "answer": "",
+      "cost_ms": 56,
+      "trace_id": "087f0ced0a4d499994d0ad37ce2f3971",
+      "answer": "order_cnt_region = 2",
       "rows": [
         {
           "order_cnt_region": 2
@@ -601,8 +601,8 @@
         "结果自检=PASS"
       ],
       "cost_ms": 49,
-      "trace_id": "d42da299a9d6400aa966337046442252",
-      "answer": "",
+      "trace_id": "1707a97d54f94fbc8484aa923ecba4e8",
+      "answer": "共 1 行（channel_name → gmv_channel）：APP=138821.73",
       "rows": [
         {
           "channel_name": "APP",
@@ -654,9 +654,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 37,
-      "trace_id": "38bad0354b464877beb498e3bed5eff5",
-      "answer": "",
+      "cost_ms": 45,
+      "trace_id": "8e321156791f455f983154dab1bd306c",
+      "answer": "共 1 行（region → gmv_region）：华东=254466.85",
       "rows": [
         {
           "region": "华东",
@@ -708,9 +708,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 42,
-      "trace_id": "7d5044dd17044d05b5503273119cba20",
-      "answer": "",
+      "cost_ms": 39,
+      "trace_id": "a6c89a4aeb9144a1b6dd6a8e8b2361cf",
+      "answer": "共 1 行（category_name → sale_amount_product）：电脑外设=293469.91",
       "rows": [
         {
           "category_name": "电脑外设",
@@ -762,9 +762,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 61,
-      "trace_id": "2ef7d7fb25fc419f852e8d3995912ff6",
-      "answer": "",
+      "cost_ms": 57,
+      "trace_id": "7e9ef819682d497ba7092fbece73cc4b",
+      "answer": "共 1 行（dt → gmv_total）：2026-10-16=66184.50",
       "rows": [
         {
           "dt": "2026-10-16",
@@ -814,9 +814,9 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 47,
-      "trace_id": "c5810bfd9fdf4ee08dd99ab029cb1636",
-      "answer": "",
+      "cost_ms": 59,
+      "trace_id": "9901137dfbdf470095a197813acd0579",
+      "answer": "共 3 行（channel_name → gmv_channel_ratio）：APP=0.3832、网页=0.3226、小程序=0.2942",
       "rows": [
         {
           "channel_name": "APP",

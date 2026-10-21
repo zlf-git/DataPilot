@@ -2,6 +2,7 @@ package com.zlf.datapilot.controller;
 
 import com.zlf.datapilot.agent.AgentContext;
 import com.zlf.datapilot.agent.AgentEngine;
+import com.zlf.datapilot.agent.trace.RunStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,6 +35,8 @@ public class AskController {
     private AskResponse toResponse(AgentContext ctx, long costMs) {
         AskResponse r = new AskResponse();
         r.setTraceId(ctx.getTraceId());
+        // 运行结论显式回显（Ticket 11）：answer 现在成功时也有内容，判据不能再看「answer 是否为空」
+        r.setStatus(RunStatus.of(ctx).name());
         r.setQuestion(ctx.getUserQuestion());
         r.setIr(ctx.getIr());
         r.setSql(ctx.getSqlCommand() != null ? ctx.getSqlCommand().sql() : null);
@@ -51,8 +54,9 @@ public class AskController {
             answer = ctx.getErrorMessage() != null ? ctx.getErrorMessage() : "";
         }
         r.setAnswer(answer);
-        r.setChartType("table");
-        r.setReportHtml("");
+        // 解释与报告由 Ticket 11 的节点产出（此前是 "table"/"" 的占位）
+        r.setChartType(ctx.getChartType());
+        r.setReportHtml(ctx.getReportHtml());
         // 多轮（Ticket 10）：补全后的问题与环比结论一起回显，
         // 否则「那环比呢」这类追问在响应体里看不出系统理解成了什么
         r.setRewrittenQuestion(ctx.getRewrittenQuestion());

@@ -65,6 +65,17 @@
 
 ## 修订记录
 
+### v2.17（Ticket 11 解释 + 报告）
+
+- **ExplainStep**：模板生成 answer + 按结果形状定 `chartType`（空→table、单行单列→metric、多行单列→bar、日期首列两列→line、两列其它→bar、3+ 列→table）；**已有 answer 不覆盖** —— 结果自检的「无数据」、环比的「前 7 天无数据」优先
+- **ReportStep**：ECharts HTML，**每行一条 series**（判据硬要求）；option 由 Jackson 序列化，`<` 转 `\u003c` 防 `</script>` 提前闭合；页面另附表格，CDN 拿不到时仍能看数
+- **新增 `AskResponse.status`**（本票连带影响，票面没写）：Ticket 01~10 的判据隐含「answer 非空 = 没成功」，本票起成功时也有 answer，导致 15 题**全被判 `exec_failed`**（准确率 0/15 而形状分 49/49，数字自相矛盾）。改为显式 `status`（`SUCCESS/REJECTED/FAILED`，与 `agent_run.status` 同源），`run_eval`/`e2e_stub` 有 status 按 status、没有则回退旧口径
+- **span 基线 9 → 11**：`TraceSpan` 加 `explain`/`report`；`verify_traces` 从 `/api/health/traces` 读基线，脚本零改动即跟随（09 票面已补注）
+- 验收 `qa/verify_explain.py` **40/40**：5 题覆盖 metric/bar，断言 `status=SUCCESS`、`chartType` 与形状一致、reportHtml 含 echarts、**option JSON 可解析**、**series 长度 = rows 长度**、series 名与首行对齐
+- line/table 两种形状在 15 题里没有用例，由单测覆盖（不为凑形状编评测集外的查询）
+- 测试 **129/129**（新增 13）；`run_eval`/`e2e_stub`/`verify_traces`(11)/`verify_session` 全绿；延迟 59.3 → 65.9ms
+- 边界：ECharts 走 CDN（无网时图表空白、表格仍在）；`chartType` 只有形状规则没有语义
+
 ### v2.16（Ticket 10 多轮 session）
 
 - **ask 带 sessionId 后能续上下文**：`agent/session/SessionStore` 存「轮次摘要」（问题 + 改写结果 + 指标/维度 + 窗口天数 + SQL），不存整份 IR —— 存 IR 会诱使后续代码直接复用上一轮 SQL，那等于绕过本轮白名单与闸门。三条上限：单会话 5 轮 / TTL 30 分钟（按最后一轮写入时间）/ 会话数 500（淘汰最久未用）

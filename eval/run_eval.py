@@ -316,20 +316,24 @@ def main():
         resp = http_json(host + '/api/ask', {'question': it['question']}, timeout=args.timeout)
         sql = (resp.get('sql') or '').strip()
         answer = (resp.get('answer') or '').strip()
+        status = (resp.get('status') or '').strip()
         rows = resp.get('rows') or []
         params = resp.get('params') or []
         gates = resp.get('gates') or []
         latencies.append(resp.get('costMs') or 0)
 
-        ran = bool(sql) and not answer
+        # Ticket 11 起 answer 成功时也有内容（解释节点），判据改用显式 status；
+        # 老响应没有 status 时回退到「answer 为空」这条旧口径
+        ran = bool(sql) and (status == 'SUCCESS' if status else not answer)
         syntax_ok += 1 if ran else 0
         gate_blocked += 1 if any('REJECT' in g for g in gates) else 0
 
         issues = []
         if not sql:
             issues.append(('gate_blocked', 'sql 为空，answer=%r' % answer[:60]))
-        elif answer:
-            issues.append(('exec_failed', 'answer=%r（执行异常或闸门拦截）' % answer[:60]))
+        elif not ran:
+            issues.append(('exec_failed', 'status=%s answer=%r（执行异常或闸门拦截）'
+                           % (status or '未回显', answer[:60])))
         else:
             ok, reason, detail = compare(it['expect_type'], it, rows, tol)
             if not ok:

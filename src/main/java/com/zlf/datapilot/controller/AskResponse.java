@@ -12,6 +12,16 @@ import java.util.Map;
 public class AskResponse {
 
     private String traceId;
+
+    /**
+     * 运行结论（Ticket 11 补）：{@code SUCCESS} / {@code REJECTED}（闸门或改写明确拒绝）/
+     * {@code FAILED}（跑挂了）。与 {@code agent_run.status} 同源同值。
+     *
+     * <p>存在理由：Ticket 11 起 {@code answer} 在成功时也有内容（解释节点写给用户看的一句话），
+     * 此前「answer 非空 = 没跑成功」的隐含约定不再成立 —— 判据得有一个显式字段，
+     * 而不是靠「某个字段恰好是空的」这种副作用。
+     */
+    private String status;
     private String question;
     private QueryIr ir;
     private String sql;
@@ -44,6 +54,14 @@ public class AskResponse {
 
     public void setTraceId(String traceId) {
         this.traceId = traceId;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public String getQuestion() {
