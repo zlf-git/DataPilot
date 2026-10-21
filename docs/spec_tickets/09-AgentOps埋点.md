@@ -77,7 +77,7 @@ Ticket 01
 
 | 项 | 结果 |
 |---|---|
-| `mvn -o test` | **93/93 全绿，skipped=0**（新增 `TraceStepTest` 9 / `RunStatusTest` 5 / `TraceSpanTest` 5） |
+| `mvn -o test` | **94/94 全绿，skipped=0**（新增 `TraceStepTest` 10 / `RunStatusTest` 5 / `TraceSpanTest` 5） |
 | `qa/verify_traces.py` | **PASS 31/31**：单日题 + 窗口题各 9 span = 基线 9；`llm`/`sql`/`gate` 各≥1；`cost=0.000700`；`stepOrder=[1..9]`；窗口题 `final_sql` 含 `dt > ?` 与 `dt <= ?`；两次运行 traceId 不同、sessionId 能过滤到 2 条；不存在的 traceId → 404 |
 | 直查 MySQL（`data_agent`） | `agent_run`：SUCCESS 3 / FAILED 4，均价 0.0007 / 0.000525 元；`agent_step`：operation 23 / llm 6（token 3600）/ gate 11 / sql 3 |
 | 异常路径 | 空白问题 → `FAILED` + 0 span；未命中意图 → `FAILED` + 4 span（停在 `llm_generate`）；反例跨表维度 → `FAILED` + 6 span（停在 `ir_to_sql`，`errorMsg` 记全了原因） |
@@ -90,3 +90,21 @@ Ticket 01
 用户看到的文案是对的、也没出数，但两件事值得记：① 「拦截率」若按 `REJECTED` 统计会漏掉这一类，实际拦截 = 闸门 REJECT + 转换期拒绝；② 这与 07c 发现的「闸门③ 只看元数据白名单、不看引擎可读表」同源 —— 白名单是全局一份，表级归属全靠转换器兜。已作为追加验收项写进 `02-五道闸门与维度字典一对多.md`（第二条）。
 
 **摊开说**：埋点反而让这件事变得可见了 —— trace 一眼能看出「是闸门放的、转换器拦的」，这正是 per-span 埋点的价值。
+
+### 追加：埋点把延迟抬了 8 倍，是被评测指标抓出来的（已修）
+
+第一版按「每步写一行」实现，功能全绿、`verify_traces` 31 项全过，但 `run_eval` 的**平均延迟从 28.6ms 跳到 231.5ms**（都是 stub 下测的，LLM 不占时间）。这不是小噪音，是简历上要写的那条延迟数字，所以当场追。
+
+| 写法 | 往返 | commit/fsync | 单次问数实测 |
+|---|---|---|---|
+| 逐条 `insert`（首版） | 10 | 10 | ~250ms |
+| `batchUpdate` | 1 | **10**（batch 不合并提交） | ~190ms |
+| **多值 INSERT + 与 run 同事务** | 2 | 1 | **~50ms**（基线 28ms，埋点自身约 +22ms） |
+
+**踩的坑**：第一反应是「往返太多」，于是换 `batchUpdate` —— 只从 250ms 降到 190ms。真正的大头是**每条语句各自 commit**（元数据库在 Windows Docker 卷上，每次 fsync 十几毫秒）。`batchUpdate` 省的是网络，不是提交；只有「合成一条多值 INSERT + 事务里只 commit 一次」才省得掉。
+
+**顺带修的语义**：spans 与 run 从「两次独立写入」改成同一事务，trace 有了原子性 —— 不会出现「有汇总没明细」的半条记录。代价是单条语句因列宽/约束失败时整体回滚，这本来也该整体失败。
+
+**最终指标**：`run_eval` 平均延迟 55.9ms（基线 28.6ms，+27ms），准确率 15/15、形状 49/49、窗口探针 PASS 不变。
+
+**方法论记一笔**：这处退化不是靠人工 review 发现的，是「每次改动都重跑评测并把数字与上一次比」抓出来的。埋点这类「旁路功能」最容易被当成零成本，实际上它在请求路径上同步写库。

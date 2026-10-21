@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -24,11 +26,16 @@ import java.util.function.Supplier;
  * <ol>
  *   <li><b>埋点不能影响问数</b>：写库异常一律吞掉只打 warn。AgentOps 是旁路，
  *       数据库抖动导致问数失败是本末倒置。</li>
- *   <li><b>span 里的异常必须原样抛出</b>：{@code finally} 里写库、异常继续往上走，
+ *   <li><b>span 里的异常必须原样抛出</b>：异常继续往上走，
  *       让 AgentEngine 原有的分类处理（超时/服务异常）保持不变。</li>
  *   <li><b>列宽先截断</b>：{@code agent_run.question/error_msg} 是 VARCHAR(500)，
  *       LLM 的 errorMessage 或超长问题直接插会抛 "Data too long"，把埋点整条丢掉。</li>
  * </ol>
+ *
+ * <p><b>写入时机</b>：span 先攒在内存，{@link #finish} 时一次提交（多值 INSERT + agent_run 同事务）。
+ * 逐条 insert 版本实测把单次问数延迟从 28ms 抬到 250ms；{@code batchUpdate} 只解决往返不解决提交
+ * （仍 ~190ms）；最终写法一次 commit，实测回到 ~55ms（其中约 25ms 是写两条语句本身）。
+ * 代价是「进程在运行中崩掉会丢这次运行的 span」——可接受：那种情况下 agent_run 也写不出来，靠应用日志排查。
  */
 public class TraceStep {
 
@@ -47,6 +54,9 @@ public class TraceStep {
     private final String traceId;
     private final LocalDateTime runStartAt = LocalDateTime.now();
     private final long runStartMs = System.currentTimeMillis();
+
+    /** span 缓冲：收尾时一次 batch 落库，避免每步一次数据库往返 */
+    private final List<AgentTraceRepository.StepRow> buffer = new ArrayList<>();
 
     private int order = 0;
 
@@ -92,20 +102,23 @@ public class TraceStep {
             throw e;
         } finally {
             long latency = System.currentTimeMillis() - startMs;
-            write(new AgentTraceRepository.StepRow(traceId, span.code(), span.type().code(), seq,
+            // 只进内存缓冲，不做 I/O：span 记录本身就不会拖慢问数、也不会因写库失败打断链路
+            buffer.add(new AgentTraceRepository.StepRow(traceId, span.code(), span.type().code(), seq,
                     status.name(), latency, clip(input, FIELD_MAX), clip(output, FIELD_MAX),
                     used, clip(error, ERROR_MAX), startAt, LocalDateTime.now()));
         }
     }
 
-    /** 收尾：写 agent_run（token/cost/latency/最终 SQL/失败原因）。每次运行必须恰好调用一次。 */
+    /** 收尾：一次调用写完全部 span + agent_run（同事务，见 {@link AgentTraceRepository#saveTrace}）。 */
     public void finish(AgentContext ctx, RunStatus status) {
         BigDecimal cost = costOf(ctx.getPromptTokens(), ctx.getCompletionTokens());
-        write(new AgentTraceRepository.RunRow(traceId, clip(ctx.getSessionId(), 64),
+        AgentTraceRepository.RunRow run = new AgentTraceRepository.RunRow(
+                traceId, clip(ctx.getSessionId(), 64),
                 clip(ctx.getUserQuestion(), QUESTION_MAX), status.name(),
                 System.currentTimeMillis() - runStartMs, ctx.getTotalTokens(), cost,
                 clip(ctx.getGeneratedSql(), SQL_MAX), clip(ctx.getErrorMessage(), ERROR_MAX),
-                runStartAt, LocalDateTime.now()));
+                runStartAt, LocalDateTime.now());
+        write(() -> repo.saveTrace(buffer, run));
     }
 
     /** 成本（元）：按 datapilot.cost 的每百万 token 单价算，保留 6 位（DECIMAL(10,6)） */
@@ -135,14 +148,6 @@ public class TraceStep {
         } catch (RuntimeException e) {
             log.warn("AgentOps 埋点写入失败 trace={}：{}（问数不受影响）", traceId, brief(e));
         }
-    }
-
-    private void write(AgentTraceRepository.StepRow row) {
-        write(() -> repo.saveStep(row));
-    }
-
-    private void write(AgentTraceRepository.RunRow row) {
-        write(() -> repo.saveRun(row));
     }
 
     /** 截断到列宽，null 原样返回 */

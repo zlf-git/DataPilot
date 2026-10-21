@@ -74,7 +74,8 @@
 - **run 状态三态**：`REJECTED`（闸门拦下）与 `FAILED`（跑挂了）分开，判据从 `gateResults` 反查，不给 `AgentContext` 加新状态位
 - **票面偏差 3 处**：用「引擎内显式包一层」而非装饰器（引擎按具体类型注入 Step）；`step_name` 按实际执行单元命名（`validate` 拆成三阶段闸门）；`span_type` 不含 `vector`（Milvus 关闭时召回走关键词，不放永远不产出的值）
 - **本票暴露、挂 02**：跨表维度的拒绝发生在转换器而非闸门①（闸门只看全局字段白名单，不校验字段归属表），连带让这类运行记成 `FAILED` 而非 `REJECTED` → 追加验收项 2 写入 02 票面
-- 测试 **93/93**（新增 19）；`qa/verify_traces.py` **31 项全绿**；`run_eval` / `e2e_stub` / `verify_stub_ir` 全 PASS 零回归
+- **性能退化被抓出并修掉**：首版「每步一条 insert」把平均延迟从 28.6ms 抬到 231.5ms；换 `batchUpdate` 只到 190ms（batch 不合并提交，大头是 fsync）；最终「多值 INSERT + 与 run 同事务」回到 **55.9ms**（埋点自身 +27ms），准确率/形状/探针全不变
+- 测试 **94/94**（新增 20）；`qa/verify_traces.py` **31 项全绿**；`run_eval` / `e2e_stub` / `verify_stub_ir` 全 PASS 零回归
 
 ### v2.13（QA-06c / QA-07 二审复核：06e 补丁 + 07c 记录）
 

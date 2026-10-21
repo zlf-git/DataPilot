@@ -2,6 +2,7 @@ package com.zlf.datapilot.agent.trace;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -60,19 +61,59 @@ public class AgentTraceRepository {
                          LocalDateTime endTime) {
     }
 
-    public void saveStep(StepRow r) {
-        jdbc.update("""
-                        INSERT INTO agent_step
-                            (trace_id, step_name, span_type, step_order, status, latency_ms,
-                             input, output, token_used, error_msg, start_time, end_time)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                r.traceId(), r.stepName(), r.spanType(), r.stepOrder(), r.status(), r.latencyMs(),
-                r.input(), r.output(), r.tokenUsed(), r.errorMsg(),
-                Timestamp.valueOf(r.startTime()), Timestamp.valueOf(r.endTime()));
+    /**
+     * 落一次运行的全部埋点：<b>span 拼成一条多值 INSERT，且与 agent_run 同事务</b>。
+     *
+     * <p>为什么这么写（本机元数据库在 Windows Docker 卷、autocommit=on，实测单次问数延迟，基线 28ms）：
+     * <table>
+     *   <tr><th>写法</th><th>往返</th><th>commit/fsync</th><th>端到端</th></tr>
+     *   <tr><td>逐条 insert</td><td>10</td><td>10</td><td>~250ms</td></tr>
+     *   <tr><td>{@code batchUpdate}</td><td>1</td><td>10（batch 不合并提交）</td><td>~190ms</td></tr>
+     *   <tr><td>多值 INSERT + 同事务</td><td>2</td><td>1</td><td>~50ms（埋点自身约 +22ms）</td></tr>
+     * </table>
+     * 结论：「批量」省的是往返，省不掉提交；提交才是大头。所以合成一条语句 + 一个事务。
+     *
+     * <p>同事务顺带换来原子性：run 有记录就一定有它的 span，不会出现「有汇总没明细」的半条 trace。
+     * 单条语句就失败的情况（列宽/约束）会一起回滚 —— 那本就该整体失败，写半截更难查。
+     */
+    @Transactional
+    public void saveTrace(List<StepRow> steps, RunRow run) {
+        insertSteps(steps);
+        insertRun(run);
     }
 
-    public void saveRun(RunRow r) {
+    private void insertSteps(List<StepRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        StringBuilder sql = new StringBuilder("INSERT INTO agent_step"
+                + " (trace_id, step_name, span_type, step_order, status, latency_ms,"
+                + " input, output, token_used, error_msg, start_time, end_time) VALUES ");
+        List<Object> args = new ArrayList<>(rows.size() * 12);
+        for (int i = 0; i < rows.size(); i++) {
+            if (i > 0) {
+                sql.append(',');
+            }
+            sql.append("(?,?,?,?,?,?,?,?,?,?,?,?)");
+            StepRow r = rows.get(i);
+            // 逐个 add：List.of 不接受 null，而 input/output/error_msg 本来就允许为 null
+            args.add(r.traceId());
+            args.add(r.stepName());
+            args.add(r.spanType());
+            args.add(r.stepOrder());
+            args.add(r.status());
+            args.add(r.latencyMs());
+            args.add(r.input());
+            args.add(r.output());
+            args.add(r.tokenUsed());
+            args.add(r.errorMsg());
+            args.add(Timestamp.valueOf(r.startTime()));
+            args.add(Timestamp.valueOf(r.endTime()));
+        }
+        jdbc.update(sql.toString(), args.toArray());
+    }
+
+    private void insertRun(RunRow r) {
         jdbc.update("""
                         INSERT INTO agent_run
                             (trace_id, session_id, question, status, total_latency_ms, total_tokens,
