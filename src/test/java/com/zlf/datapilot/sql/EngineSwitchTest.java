@@ -1,6 +1,7 @@
 package com.zlf.datapilot.sql;
 
 import com.zlf.datapilot.config.DatapilotProperties;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -86,6 +87,27 @@ class EngineSwitchTest {
             // 配置（properties）与条件（@ConditionalOnProperty）必须指向同一个引擎
             assertThat(ctx.getBean(EngineJdbc.class).engineType()).isEqualTo(ex.engineName());
         });
+    }
+
+    @Test
+    @DisplayName("type 存在但为空串（yml 里 `type:` 后面没值）也要落到 starrocks（QA-08 P2-3）")
+    void blankTypeFallsBackToStarRocks() {
+        DatapilotProperties props = new DatapilotProperties();
+        props.getEngine().setType("");          // 属性存在但为空串 —— @ConditionalOnProperty 认不出的那种
+        props.getEngine().setUrl(SR_URL);
+        props.getEngine().setUsername("agent_ro");
+        props.getEngine().setPassword("AgentRo@2026");
+
+        new ApplicationContextRunner()
+                .withBean("datapilotProperties", DatapilotProperties.class, () -> props)
+                .withPropertyValues("datapilot.engine.type=")
+                .withUserConfiguration(EngineJdbc.class, StarRocksSqlExecutor.class, MysqlSqlExecutor.class)
+                .run(ctx -> {
+                    assertThat(ctx).hasNotFailed();
+                    assertThat(ctx.getBeansOfType(SqlExecutor.class)).hasSize(1);
+                    assertThat(ctx.getBean(SqlExecutor.class).engineName()).isEqualTo("starrocks");
+                    assertThat(ctx.getBean(EngineJdbc.class).engineType()).isEqualTo("starrocks");
+                });
     }
 
     @Test

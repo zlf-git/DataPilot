@@ -1,6 +1,6 @@
 package com.zlf.datapilot.sql;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -20,7 +20,7 @@ import java.util.List;
  * 同一实例里的 {@code metric_def}、{@code agent_run} 等元数据表<b>不该</b>被问数链路读到。
  */
 @Component
-@ConditionalOnProperty(prefix = "datapilot.engine", name = "type", havingValue = "mysql")
+@Conditional(OnEngineType.Mysql.class)
 public class MysqlSqlExecutor extends JdbcSqlExecutor {
 
     /** 声明给 Agent 读的表（Ticket 07 钩子）。MySQL 侧只有订单表用于演示。 */

@@ -25,7 +25,8 @@ public class RealLlmProviderCondition implements Condition {
 
     @Override
     public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-        String raw = context.getEnvironment().getProperty(PROVIDER_KEY, "stub");
+        // 与桩的装配条件共用同一套归一：空值/空白/缺失都算 stub（Ticket 08b）
+        String raw = OnLlmProvider.normalize(context.getEnvironment().getProperty(PROVIDER_KEY));
         return LlmProvider.find(raw).isPresent();
     }
 }

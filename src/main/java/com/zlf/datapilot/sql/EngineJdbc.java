@@ -38,8 +38,6 @@ public class EngineJdbc {
 
     private static final Logger log = LoggerFactory.getLogger(EngineJdbc.class);
 
-    /** 已知引擎 → JDBC 驱动。StarRocks/MySQL 都走 MySQL 协议，但分开列以便将来接 DuckDB/Postgres。 */
-    private static final Set<String> SUPPORTED = Set.of("starrocks", "mysql");
 
     private final HikariDataSource dataSource;
     private final JdbcTemplate jdbc;
@@ -47,14 +45,14 @@ public class EngineJdbc {
 
     public EngineJdbc(DatapilotProperties props) {
         DatapilotProperties.Engine engine = props.getEngine();
-        // 空值归一成 starrocks，与 StarRocksSqlExecutor 的 @ConditionalOnProperty(matchIfMissing=true) 对齐。
-        // 否则「不写 type」时条件会装 StarRocks、这里却抛「type= 不受支持」，两套默认值互相矛盾
-        // （QA-07 P2-2）。yml 里删掉那行不该变成启动失败。
+        // 空值/空串/缺行 → starrocks，与装配条件 OnEngineType 共用同一个 normalize（QA-07 P2-2 / QA-08 P2-3）。
+        // 两边各写一套的后果：留空时条件装不上执行器、这里却认为是 starrocks，启动失败且报错不提配置名。
         String raw = engine.getType();
-        String type = (raw == null || raw.isBlank()) ? "starrocks" : raw.trim().toLowerCase();
-        if (!SUPPORTED.contains(type)) {
+        String type = EngineTypes.normalize(raw);
+        if (!EngineTypes.SUPPORTED.contains(type)) {
             throw new IllegalStateException("datapilot.engine.type=" + raw
-                    + " 不受支持，可选值：" + SUPPORTED + "（留空默认 starrocks；Ticket 07）");
+                    + " 不受支持，可选值：" + EngineTypes.SUPPORTED
+                    + "（留空默认 " + EngineTypes.DEFAULT_TYPE + "；Ticket 07）");
         }
         if (engine.getUrl() == null || engine.getUrl().isBlank()) {
             throw new IllegalStateException("datapilot.engine.url 未配置（Ticket 07）");

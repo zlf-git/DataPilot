@@ -1,5 +1,6 @@
 package com.zlf.datapilot.llm;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zlf.datapilot.config.DatapilotProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,50 @@ class LlmClientConfigTest {
                     assertThat(ctx).hasNotFailed();
                     assertThat(ctx).doesNotHaveBean(OpenAiCompatibleLlmClient.class);
                     assertThat(ctx).doesNotHaveBean(LlmClient.class);
+                });
+    }
+
+    /** 含桩的上下文：StubLlmClient 读 stub_ir 需要 ObjectMapper，最小上下文里没有自动配置 */
+    private ApplicationContextRunner stubRunner() {
+        return new ApplicationContextRunner()
+                .withUserConfiguration(LlmClientConfig.class, StubLlmClient.class, PropsConfig.class)
+                .withBean(RestClient.Builder.class, RestClient::builder, bd -> bd.setPrimary(true))
+                .withBean(ObjectMapper.class, ObjectMapper::new, bd -> bd.setPrimary(true));
+    }
+
+    @Test
+    @DisplayName("含桩的真实上下文：provider=stub 时容器里有且只有一个 LlmClient，且是桩（QA-08 P2-6）")
+    void stubIsTheOnlyClientInRealContext() {
+        stubRunner()
+                .withPropertyValues("datapilot.llm.provider=stub")
+                .run(ctx -> {
+                    assertThat(ctx).hasNotFailed();
+                    assertThat(ctx).hasSingleBean(LlmClient.class);
+                    assertThat(ctx.getBean(LlmClient.class)).isInstanceOf(StubLlmClient.class);
+                    assertThat(ctx).doesNotHaveBean(OpenAiCompatibleLlmClient.class);
+                });
+    }
+
+    @Test
+    @DisplayName("provider 留空（属性存在但空串）也要落到桩，不能一个 LlmClient 都没有（QA-08 P2-1）")
+    void blankProviderFallsBackToStub() {
+        stubRunner()
+                .withPropertyValues("datapilot.llm.provider=")
+                .run(ctx -> {
+                    assertThat(ctx).hasNotFailed();
+                    assertThat(ctx).hasSingleBean(LlmClient.class);
+                    assertThat(ctx.getBean(LlmClient.class)).isInstanceOf(StubLlmClient.class);
+                });
+    }
+
+    @Test
+    @DisplayName("provider 整行缺失也要落到桩（默认值不是靠 yml 兜的）")
+    void missingProviderFallsBackToStub() {
+        stubRunner()
+                .run(ctx -> {
+                    assertThat(ctx).hasNotFailed();
+                    assertThat(ctx).hasSingleBean(LlmClient.class);
+                    assertThat(ctx.getBean(LlmClient.class)).isInstanceOf(StubLlmClient.class);
                 });
     }
 

@@ -199,4 +199,36 @@ class LlmClientFactoryTest {
         assertThat(d.model()).isNull();
         assertThat(d.apiKeyConfigured()).isFalse();
     }
+
+    @Test
+    @DisplayName("Key 取值三档：显式配置 > provider 环境变量（QA-08 P2-4 漏测的那一档）")
+    void explicitApiKeyWinsOverEnv() {
+        DatapilotProperties.Llm c = cfg("deepseek");
+
+        // 只配环境变量
+        c.setApiKey(null);
+        assertThat(factory.resolve(c, envOf("DEEPSEEK_API_KEY", "sk-from-env")).apiKey())
+                .isEqualTo("sk-from-env");
+
+        // 两者都配：显式配置优先
+        c.setApiKey("sk-from-config");
+        assertThat(factory.resolve(c, envOf("DEEPSEEK_API_KEY", "sk-from-env")).apiKey())
+                .isEqualTo("sk-from-config");
+
+        // 显式配置是空白串 → 视同没配，回落到环境变量（空白不是有效 Key）
+        c.setApiKey("   ");
+        assertThat(factory.resolve(c, envOf("DEEPSEEK_API_KEY", "sk-from-env")).apiKey())
+                .isEqualTo("sk-from-env");
+    }
+
+    @Test
+    @DisplayName("base-url 归一化只剥一层结尾 /v1：.../v1/v1 保留一层，不一路剥到 host")
+    void normalizeStripsOnlyOneTrailingV1() {
+        assertThat(LlmClientFactory.normalizeBaseUrl("https://api.deepseek.com/v1/"))
+                .isEqualTo("https://api.deepseek.com");
+        assertThat(LlmClientFactory.normalizeBaseUrl("https://api.deepseek.com/v1/v1"))
+                .isEqualTo("https://api.deepseek.com/v1");
+        assertThat(LlmClientFactory.normalizeBaseUrl("https://gw.internal.com/gw/v1-beta/x"))
+                .isEqualTo("https://gw.internal.com/gw/v1-beta/x");
+    }
 }

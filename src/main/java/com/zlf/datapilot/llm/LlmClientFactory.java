@@ -89,7 +89,10 @@ public class LlmClientFactory {
      * {@code /v1/v1/chat/completions} 的 404 —— 这种错在真实调用时才暴露，且报错只有一句 404，
      * 排查成本远高于这里剥一下。
      *
-     * <p>只剥<b>结尾</b>的 {@code /v1}，中间出现的 v1（如代理网关路径 {@code /gw/v1-beta/x}）不动。
+     * <p>只剥<b>结尾</b>的 {@code /v1}，且<b>只剥一层</b>：{@code .../compatible-mode/v1} → {@code .../compatible-mode}；
+     * 写成 {@code .../v1/v1} 时只剥掉最后一层，剩下的 {@code /v1} 当作路径保留 ——
+     * 私有网关确实存在「路径本身以 /v1 结尾且需要保留」的部署，while 一路剥到 host 是静默改写（QA-08 P2-7）。
+     * 中间出现的 v1（如代理网关路径 {@code /gw/v1-beta/x}）不动。
      */
     public static String normalizeBaseUrl(String raw) {
         if (raw == null) {
@@ -99,7 +102,7 @@ public class LlmClientFactory {
         while (s.endsWith("/")) {
             s = s.substring(0, s.length() - 1);
         }
-        while (s.endsWith("/v1")) {
+        if (s.endsWith("/v1")) {
             s = s.substring(0, s.length() - 3);
             while (s.endsWith("/")) {
                 s = s.substring(0, s.length() - 1);

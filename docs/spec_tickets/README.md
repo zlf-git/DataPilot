@@ -65,6 +65,21 @@
 
 ## 修订记录
 
+### v2.15（QA-08 多模型工厂收口：08b 补丁）
+
+QA-08 判 **PASS，0 P0 / 0 P1，7 条 P2**，本轮全部收口。核心结论一句话：**「空值 = 默认值」必须由装配侧决定**，不能让构造期单方面归一。
+
+- **P2-1（同族 1/2）`provider` 空串/空白/整行缺失 → 容器里没有 `LlmClient`，启动失败且报错不提配置名**：`@ConditionalOnProperty(matchIfMissing=true)` 只认「属性整行缺失」，认不出「属性存在但为空串」。新增 `llm/OnLlmProvider`（`normalize`：null/空白→`stub`），桩改 `@Conditional`，真实侧条件复用同一归一
+- **P2-3（同族 2/2）`engine.type` 空串 → 两个执行器都不装配**：`EngineJdbc` 归成 `starrocks`、条件注解两个都不匹配。新增 `sql/EngineTypes` + `sql/OnEngineType`，构造/条件/健康检查三个入口只剩一处规则（这是 07b 只修了一半的地方）
+- **P2-2 删死代码**：`/api/health/llm` 的 `client == null` 分支不可达（无 bean 时应用起不到能响应 HTTP 的地步），改直接注入
+- **P2-4 补安全边界测试**：`explicitApiKeyWinsOverEnv` 三档顺序（环境变量 → 显式配置赢 → 空白配置视同没配回落环境变量），此前变异 M2 对调两者 74 例全绿
+- **P2-5 token 口径纠正**：真实客户端原来把端点回报的 usage 全丢弃（`entity()` 只取 body），改 `responseEntity` 从 `ChatResponse` 元数据取三项 token；假端点实测 111/222/333 → `cost=0.000555` 与端点一致。**桩的 500/100 有意保留**（09 的 `cost>0` 判据靠它），代价是桩下的成本表是常数、不可当成本数据引用——这条与 09 票面判据说明口径一致
+- **P2-6 互斥用例搬到真实上下文**：原用例在最小上下文里断言「没有 `LlmClient`」是构造出来的真，新增 `stubIsTheOnlyClientInRealContext` 断言「有且仅有桩」
+- **P2-7 只剥一层 `/v1`**：`while` → `if`，`.../v1/v1` 不再被剥到 host；补 3 条归一断言（含网关中间路径不动）
+- 实测（非单测推断）：`--datapilot.llm.provider=` → 起得来且 `impl=StubLlmClient`；`--datapilot.engine.type=` → 起得来且 `type=starrocks`；两者此前都是 exit=1
+- 测试 **100/100**（新增 6 例）；`run_eval` / `e2e_stub` / `verify_stub_ir` 零回归；18090/18091/18092 与假端点 18100 已停
+- 新增脚本 `qa/fake_openai.py`（假 OpenAI 端点，可回报指定 usage 并回放收到的请求），P2-5 的实测证据由它产生，后续验真模型链路可复用
+
 ### v2.14（Ticket 09 AgentOps 埋点）
 
 - **全链路埋点落地**：9 个 span（`rewrite/recall/prompt/llm_generate/gate_ir/ir_to_sql/gate_sql/execute/gate_result`）写 `agent_step`，收尾写 `agent_run`；`GET /api/traces`、`GET /api/traces/{traceId}` 可查；`span_type` 补齐 `operation/llm/sql/gate/hitl`（`hitl` 给 12 预留）

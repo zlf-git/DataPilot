@@ -2,6 +2,9 @@ package com.zlf.datapilot.llm;
 
 import com.zlf.datapilot.ir.QueryIr;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ResponseEntity;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -48,16 +51,28 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
 
     @Override
     public LlmGeneration generate(String systemPrompt, String userPrompt) {
-        QueryIr ir = chatClient.prompt()
+        // responseEntity 而不是 entity：要把 ChatResponse 的 usage 一起拿回来，
+        // 否则 cost 恒为 0，「成本」这个指标等于没接（QA-08 P2-5）。
+        ResponseEntity<ChatResponse, QueryIr> resp = chatClient.prompt()
                 .system(systemPrompt)
                 .user(userPrompt)
                 .call()
-                .entity(QueryIr.class);
+                .responseEntity(QueryIr.class);
 
         LlmGeneration g = new LlmGeneration();
-        g.setIr(ir);
-        // token 用量由 Ticket 09 从 ChatResponse 的 metadata 补全
+        g.setIr(resp.entity());
+        Usage usage = resp.response() == null ? null : resp.response().getMetadata().getUsage();
+        if (usage != null) {
+            g.setPromptTokens(nvl(usage.getPromptTokens()));
+            g.setCompletionTokens(nvl(usage.getCompletionTokens()));
+            g.setTotalTokens(nvl(usage.getTotalTokens()));
+        }
         return g;
+    }
+
+    /** 端点不回报 usage 时记 0（宁可成本显示 0，也不编一个假数字） */
+    private static int nvl(Integer v) {
+        return v == null ? 0 : v;
     }
 
     @Override

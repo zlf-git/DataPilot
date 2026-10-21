@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zlf.datapilot.ir.QueryIr;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Component;
@@ -24,7 +24,7 @@ import java.util.List;
  * （"10月19号" vs "10月19日"、多空格、尾问号）导致全线「无法识别」。
  */
 @Component
-@ConditionalOnProperty(name = "datapilot.llm.provider", havingValue = "stub")
+@Conditional(OnLlmProvider.Stub.class)
 public class StubLlmClient implements LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(StubLlmClient.class);
