@@ -507,7 +507,10 @@ async function textOf(page, selector) {
   // 同上：等参数本身，别等卡片标题（标题先渲染，数据后到）
   await waitText(page, 'max_join', 20000)
   const gatePage = await bodyText(page)
-  check('闸门页：四个阈值参数齐全', ['max_join', 'max_metric', 'max_limit', 'max_rows'].every((k) => gatePage.includes(k)))
+  check('闸门页：五个阈值参数齐全（含 Ticket 15 的 max_complexity）',
+    ['max_join', 'max_metric', 'max_limit', 'max_complexity', 'max_rows'].every((k) => gatePage.includes(k)))
+  // 提示文案是这一行唯一的「说明书」：参数名自解释不了一个「拒绝点」语义（≥ 阈值就拒绝）
+  check('闸门页：max_complexity 的说明写明「分值 ≥ 此值即拒绝」', gatePage.includes('分值 ≥ 此值即拒绝'))
 
   // 正向保存（QA-13 P3-7）：把 max_rows 1000 → 999，确认生效，再改回 1000。
   // 为什么不用「原值保存」：该页的值没变时按钮是 disabled 的，点不动 ——

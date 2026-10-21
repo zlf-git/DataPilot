@@ -48,6 +48,7 @@ public class MetadataService {
             "max_join", "cost",
             "max_metric", "cost",
             "max_limit", "cost",
+            "max_complexity", "cost",
             "max_rows", "result");
 
     private final MetadataRepository repo;

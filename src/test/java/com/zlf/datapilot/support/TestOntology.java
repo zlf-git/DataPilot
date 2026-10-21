@@ -95,7 +95,8 @@ public final class TestOntology {
         Map<String, Set<String>> dimTables = new HashMap<>();
         tf.forEach((t, cols) -> cols.forEach(c -> dimTables.computeIfAbsent(c, k -> new LinkedHashSet<>()).add(t)));
 
-        Map<String, Integer> thresholds = Map.of("max_metric", 1, "max_join", 1, "max_limit", 1000, "max_rows", 1000);
+        Map<String, Integer> thresholds = Map.of("max_metric", 1, "max_join", 1, "max_limit", 1000,
+                "max_rows", 1000, "max_complexity", 3);
 
         when(cache.tables()).thenReturn(tables);
         when(cache.fields()).thenReturn(fields);

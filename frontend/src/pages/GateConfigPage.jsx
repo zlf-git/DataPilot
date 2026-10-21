@@ -19,6 +19,8 @@ const { Text } = Typography
 const PARAM_HINT = {
   max_join: 'IR 里允许的最大 JOIN 表数。调大 = 放开多表关联，代价闸门随之变松。',
   max_metric: '一次查询允许的指标个数上限。',
+  max_complexity:
+    '复杂度分值的拒绝点：指标数 × 维度数 × join 数（各因子下限 1，最简查询得 1），分值 ≥ 此值即拒绝。调到 1 连「当天总 GMV」都会被拦。',
   max_limit: '生成器允许写进 SQL 的 LIMIT 上限。',
   max_rows: '结果行数兜底：超过即由结果自检闸门告警。前端展示也受限。',
 }

@@ -130,7 +130,7 @@ data_agent 库 + 11 表 + seed（11 指标修正口径）、agent_ro 账号 + GR
 | # | 功能点 | 做什么 | 影响 | 前置 | 完成判据 |
 |---|---|---|---|---|---|
 | D1 | 闸门编号统一 | 以五道闸门.md 为唯一编号源：①存在性②权限③代价④语法⑤结果自检 | 全部文档 | 阶段③ | 三套编号收敛成一套 |
-| D2 | 代价公式补洞 | 复杂度 = 指标数 × `max(1,维度数)` × join数 | 代价闸门 | 阶段③ | Q1/Q2/Q9/Q14 维度=0 不再恒通过 |
+| D2 | 代价公式补洞 | 复杂度 = max(1,指标数) × `max(1,维度数)` × max(1,join数)，分值 ≥ `max_complexity` 即拒绝（阈值=1 连最简查询都拦得住） | 代价闸门 | 阶段③ | Q1/Q2/Q9/Q14 维度=0 不再恒通过，且阈值=1 时实测被拦 |
 | D3 | limit 兜底 | limit 为空时按 `gate_config.max_rows` 注入 | IrToSqlConverter | 阶段② | 无 limit 的 IR 生成带 LIMIT 的 SQL |
 | D4 | 参数个数分派 | 按 op 分派：`=` 1 个、`IN` n 个、`BETWEEN` 2 个、`LIKE` 包 `%` | IrToSqlConverter | 阶段② | 三种 op 参数个数正确 |
 | D7 | 鉴权最小落地 | Spring Security 三角色（业务/管理员/DBA）最小实现，`/api/gate-config` 仅管理员可写 | controller、gate_config | 阶段③ | 无鉴权时 `PUT /api/gate-config` 返回 401/403，不能改 limit |

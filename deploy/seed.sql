@@ -131,11 +131,13 @@ INSERT IGNORE INTO dimension_def (dim_name, field_name, table_name, dim_type, en
 -- 6. 闸门配置（代价/结果自检默认阈值）
 -- max_metric / max_join 按生成器当前真实能力配：单指标、单表（多指标在 Ticket 05 已明确不支持）。
 -- 配成 3/2 会让阈值永远不可达 → 成了死配置，问题全部漏到生成器才报（QA-03 P2-5）。
--- 等 Ticket 05 落多指标、Ticket 15 落多表 join 时再调回 3/2。
+-- Ticket 15 补的 max_complexity 是复杂度分值的「拒绝点」：指标×维度×join 三因子各取 max(1,·)，
+-- 最简查询得分 1，取 3 表示「当前能力下最重的题（2 张表 = 1×1×1）不会被误杀，再多一维或一表就拦」。
 INSERT IGNORE INTO gate_config (gate_name, param_key, param_value, updated_by) VALUES
 ('cost','max_join','1','数据开发'),
 ('cost','max_metric','1','数据开发'),
 ('cost','max_limit','1000','数据开发'),
+('cost','max_complexity','3','数据开发'),
 ('result','max_rows','1000','数据开发');
 -- INSERT IGNORE 不更新既有行，显式 UPDATE 保证 seed 可重复执行
 UPDATE gate_config SET param_value = '1' WHERE param_key = 'max_join';
