@@ -7,7 +7,6 @@ import com.zlf.datapilot.knowledge.OntologyCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -23,7 +22,9 @@ import java.util.regex.Pattern;
  * 数据滞后一天，用 now() 就会把窗口整体前移到「昨天~前天……」，7 天里最后一天可能是空分区，
  * 结果凭空少一天的 GMV。这也是工程上「口径锚定在数据而非挂钟」的通行做法。
  *
- * <p>缓存：Caffeine TTL 60s 按表缓存，一次问数里 RecallStep 预热 + 生成器取用只查一次库。
+ * <p>缓存：Caffeine <b>按表原子读</b>（{@code get(key, loader)}，同一表并发只查一次库），
+ * TTL 由 {@code datapilot.engine.anchor-ttl-seconds} 配置，默认 60s。
+ * 一次问数里 RecallStep 预热 + 生成器取用只查一次库（精确表述：<b>每张表每 TTL 最多查一次</b>）。
  * 查不到锚点时<b>显式失败</b>，绝不回退到 now()（回退即口径错误且无声）。
  */
 @Component
@@ -38,24 +39,27 @@ public class TimeAnchorProvider {
 
     private final JdbcTemplate jdbc;
     private final OntologyCache cache;
+    private final int ttlSeconds;
 
-    private final Cache<String, String> anchors = Caffeine.newBuilder()
-            .expireAfterWrite(Duration.ofSeconds(60))
-            .maximumSize(64)
-            .build();
+    private final Cache<String, String> anchors;
 
-    public TimeAnchorProvider(DatapilotProperties props, OntologyCache cache) {
-        DriverManagerDataSource ds = new DriverManagerDataSource();
-        ds.setDriverClassName("com.mysql.cj.jdbc.Driver");
-        ds.setUrl(props.getEngine().getUrl());
-        ds.setUsername(props.getEngine().getUsername());
-        ds.setPassword(props.getEngine().getPassword());
-        this.jdbc = new JdbcTemplate(ds);
+    public TimeAnchorProvider(DatapilotProperties props, OntologyCache cache, EngineJdbc engineJdbc) {
+        this.jdbc = engineJdbc.template();
         this.cache = cache;
+        this.ttlSeconds = Math.max(1, props.getEngine().getAnchorTtlSeconds());
+        this.anchors = Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofSeconds(ttlSeconds))
+                .maximumSize(64)
+                .build();
+        log.info("时间锚点缓存就绪：TTL {}s（datapilot.engine.anchor-ttl-seconds）", ttlSeconds);
     }
 
     /**
      * 取表的 dt 最大值（yyyy-MM-dd）。缺失/查询失败抛 IllegalArgumentException（上层转 errorMessage）。
+     *
+     * <p>用 {@code get(key, loader)} 而不是 {@code getIfPresent + put}：后者在冷缓存并发时
+     * 每个线程都会真的查一次库（QA-04 P2-2 指出的非原子读）；Caffeine 的 {@code get} 对同一 key
+     * 只让一个线程加载，其余等待结果。
      */
     public String anchor(String table) {
         if (table == null || !IDENTIFIER.matcher(table).matches()) {
@@ -64,27 +68,25 @@ public class TimeAnchorProvider {
         if (!cache.tables().contains(table)) {
             throw new IllegalArgumentException("表不在白名单，无法解析时间锚点：" + table);
         }
-        String cached = anchors.getIfPresent(table);
-        if (cached != null) {
-            return cached;
-        }
-        String value = loadAnchor(table);
-        anchors.put(table, value);
-        return value;
+        return anchors.get(table, this::loadAnchor);
+    }
+
+    /** 当前 TTL（秒），便于日志与文档核对 */
+    public int ttlSeconds() {
+        return ttlSeconds;
     }
 
     /**
      * 预热点（RecallStep 调用）：失败只记一行 warn 不阻断，真正需要锚点时由 {@link #anchor(String)} 显式报错。
+     *
+     * <p>同样走原子 {@code get(key, loader)}：预热与真正取用并发时，同一张表只会有一次查库。
      */
     public void prefetchQuietly(String table) {
         if (table == null || !IDENTIFIER.matcher(table).matches() || !cache.tables().contains(table)) {
             return;
         }
-        if (anchors.getIfPresent(table) != null) {
-            return;
-        }
         try {
-            anchors.put(table, loadAnchor(table));
+            anchors.get(table, this::loadAnchor);
         } catch (RuntimeException e) {
             log.warn("时间锚点预热失败（表 {}）：{}", table, e.getMessage());
         }

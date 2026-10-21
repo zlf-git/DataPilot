@@ -65,6 +65,15 @@
 
 ## 修订记录
 
+### v2.6（QA-04 报告收口，04b 补丁）
+
+- **评测硬规则**：窗口题**必须**断言 SQL 形状（禁 `BETWEEN`、必须含 `dt > ?` 与 `dt <= ?`、参数 == `[anchor-days, anchor]`）。原因：7 天窗口下界 2026-10-12 是空分区，闭区间（8 天）与半开（7 天）逐题返回值相同，只做行级对拍判不出来
+- **新增值级探针** `stub_ir/probe_window3.json`（近 3 天总 GMV）：半开 157702.85 vs 闭区间 223887.35，`e2e_stub.py` 两个方向都断言
+- **契约收紧**：`timeRange.relativeWindow` 由「可空、缺省按 LAST_N_DAYS」改为**必填**，缺失显式拒绝；`timeRange.anchor` 先做格式归一（`20261019`/`2026/10/19`/带时间戳）再比对，格式非法与「与数据不一致」分开报错
+- 引擎侧连接池：新增 `sql/EngineJdbc.java`（Hikari），执行器与锚点查询共用；`datapilot.engine.pool-size`（默认 5）、`anchor-ttl-seconds`（默认 60）可配
+- 锚点缓存改原子读 `get(key, loader)`；交付表述更正为「每张表每 TTL 最多查一次库」
+- `qa/verify_stub_ir.py` 改收集式断言（一次列出全部不合规）+ 文件名只认 `^q\d+\.json$`；反例桩 `neg_*`、探针桩 `probe_*` 一并校验但不计入 15 题
+
 ### v2.5（QA-03 报告余项收口，05b 补丁）
 
 - **契约变化 1**：`op=IN` 的 value 只认 JSON 数组，逗号串显式拒绝（值本身可能含逗号，硬切会静默改语义）；Prompt 同步约束

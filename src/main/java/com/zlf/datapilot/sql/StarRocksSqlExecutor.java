@@ -1,8 +1,6 @@
 package com.zlf.datapilot.sql;
 
-import com.zlf.datapilot.config.DatapilotProperties;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -11,19 +9,17 @@ import java.util.Map;
 /**
  * StarRocks 执行器：用 JdbcTemplate 连业务库（datapilot.engine，agent_ro 只读账号 @9030）。
  * 主链路走 {@link #query(SqlCommand)} 参数化执行；{@link #query(String)} 仅接口兼容。
+ *
+ * <p>连接由 {@link EngineJdbc} 统一持有（与时间锚点查询共用同一个池），
+ * 不再每次查询新建 TCP 连接（QA-04 P2-2）。
  */
 @Component
 public class StarRocksSqlExecutor implements SqlExecutor {
 
     private final JdbcTemplate jdbc;
 
-    public StarRocksSqlExecutor(DatapilotProperties props) {
-        DriverManagerDataSource ds = new DriverManagerDataSource();
-        ds.setDriverClassName("com.mysql.cj.jdbc.Driver");
-        ds.setUrl(props.getEngine().getUrl());
-        ds.setUsername(props.getEngine().getUsername());
-        ds.setPassword(props.getEngine().getPassword());
-        this.jdbc = new JdbcTemplate(ds);
+    public StarRocksSqlExecutor(EngineJdbc engineJdbc) {
+        this.jdbc = engineJdbc.template();
     }
 
     @Override

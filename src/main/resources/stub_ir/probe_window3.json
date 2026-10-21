@@ -1,0 +1,20 @@
+{
+  "question": "近3天累计GMV是多少？",
+  "ir": {
+    "question": "近3天累计GMV是多少？",
+    "selectMode": "AGG",
+    "metrics": [
+      {
+        "metricId": "gmv_total"
+      }
+    ],
+    "dimensions": [],
+    "filters": [],
+    "orderBy": [],
+    "limit": null,
+    "timeRange": {
+      "relativeWindow": "LAST_N_DAYS",
+      "days": 3
+    }
+  }
+}

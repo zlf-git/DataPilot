@@ -26,6 +26,10 @@ datapilot:
     url: jdbc:mysql://localhost:9030/mall_dw?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
     username: agent_ro
     password: ${STARROCKS_AGENT_PASSWORD:AgentRo@2026}
+    # 引擎侧连接池大小（执行与时间锚点查询共用；此前无池化，每条 SQL 新建一条 TCP）
+    pool-size: 5
+    # 时间锚点（数据 MAX(dt)）缓存 TTL 秒，按表缓存；数据日更时 60s 足够
+    anchor-ttl-seconds: 60
 
   # LLM：provider 决定装配桩(stub)还是真模型(deepseek)；真实 provider 的连接信息走 spring.ai.openai.*
   llm:

@@ -225,5 +225,6 @@ public QueryIr ask(String question) {
 规则：
 
 1. **不要填 `anchor`**，也不要自己推算起止日期——锚点由系统按数据 `MAX(dt)` 解析后回填；
-2. `timeRange` 与 `filters` 里的 `dt` 条件**只能二选一**（同时出现生成器直接拒绝）；
-3. 具体某一天（「10月19日」）仍走 `filters` 的 `dt EQ`，相对区间（「近7天」）才走 `timeRange`。
+2. **`relativeWindow` 必须给**（目前只有 `LAST_N_DAYS`）。缺了生成器直接拒绝，不会按「近 N 天」兜底——兜底等于替用户决定口径（QA-04 P2-1）；
+3. `timeRange` 与 `filters` 里的 `dt` 条件**只能二选一**（同时出现生成器直接拒绝）；
+4. 具体某一天（「10月19日」）仍走 `filters` 的 `dt EQ`，相对区间（「近7天」）才走 `timeRange`。

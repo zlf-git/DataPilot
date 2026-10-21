@@ -70,6 +70,26 @@ public class DatapilotProperties {
         private String url;
         private String username;
         private String password;
+        /** 引擎侧连接池大小（QA-04 P2-2：此前无池化，每条 SQL 新建 TCP 连接） */
+        private int poolSize = 5;
+        /** 时间锚点缓存 TTL 秒（QA-04 P2-3：此前硬编码 60s） */
+        private int anchorTtlSeconds = 60;
+
+        public int getPoolSize() {
+            return poolSize;
+        }
+
+        public void setPoolSize(int poolSize) {
+            this.poolSize = poolSize;
+        }
+
+        public int getAnchorTtlSeconds() {
+            return anchorTtlSeconds;
+        }
+
+        public void setAnchorTtlSeconds(int anchorTtlSeconds) {
+            this.anchorTtlSeconds = anchorTtlSeconds;
+        }
 
         public String getType() {
             return type;

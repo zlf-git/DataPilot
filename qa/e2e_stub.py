@@ -6,6 +6,9 @@ Ticket 01c/03 端到端验收（诚实版）。
   链路可用   := sql 非空 且 answer 为空（真的执行了且没报错）
   SQL 形状   := SQL 里出现该题 sqlMust 列出的结构片段（DISTINCT / GROUP BY / ORDER BY xx DESC / LIMIT）
   时间窗口   := window 声明的半开区间（dt &gt; from 且 dt &lt;= anchor、禁 BETWEEN、IR 回填 anchor == 数据 MAX(dt)）
+                ★ 硬规则（QA-04 P1-2）：窗口题**必须**断言 SQL 形状，值对拍不足以判别半开/闭区间
+                  （7 天窗口的 2026-10-12 是空分区，BETWEEN 与半开逐题等值）；
+                  另用 days=3 探针做值级判别：157702.85（半开 3 天）vs 223887.35（闭区间 4 天）
   答对       := 链路可用 + 形状达标 + 结果行与期望集合一致
   显式拒绝   := sql 为空 且 answer 含该题 blocker 字样（未实现的题必须走这条）
   静默错     := 期望 BLOCKED 却执行出数，或 SQL 缺 sqlMust 结构 —— 看着成功实则错，必须为 0
@@ -19,7 +22,7 @@ import re
 import subprocess
 import sys
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 HOST = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:18080'
 URL = HOST + '/api/ask'
@@ -274,12 +277,62 @@ def main():
             stable_fail += 1
             print('  FAIL %-12s 异常 %s' % (desc, e))
 
+    # QA-04 P1-2：7 天窗口下 2026-10-12 是空分区，BETWEEN(闭区间/8 天) 与半开(7 天) 逐题返回值完全一样，
+    # 「不取 8 天」只对 SQL 形状敏感、对值不敏感。这里用 days=3 做值级探针：
+    # 锚点 2026-10-19，半开 dt > '10-16' 取 10-17/18/19 = 157702.85；BETWEEN '10-16'..'10-19' 会多吃 10-16 的 66184.50 = 223887.35。
+    # 因此「值等于 157702.85 且不等于 223887.35」才是能与闭区间真正区分开的判据。
+    print('\n== 窗口口径探针（days=3：半开 157702.85 vs 闭区间 223887.35）==')
+    probe_fail = 0
+    try:
+        r = ask('近3天累计GMV是多少？')
+        sql = r.get('sql') or ''
+        params = [str(x) for x in (r.get('params') or [])]
+        rows = r.get('rows') or []
+        got = rows[0].get('gmv_total') if rows else None
+        issues = []
+        if 'BETWEEN' in sql.upper():
+            issues.append('SQL 出现 BETWEEN（闭区间会多取一天）')
+        if 'DT > ?' not in sql.upper() or 'DT <= ?' not in sql.upper():
+            issues.append('SQL 不是半开区间 dt > ? AND dt <= ?')
+        if not executed(r):
+            issues.append('未执行出数（answer=%r）' % ((r.get('answer') or '')[:40],))
+        if len(params) != 2:
+            issues.append('参数个数 %d ≠ 2（应为 anchor-days / anchor）' % len(params))
+        else:
+            try:
+                anchor_day = datetime.strptime(params[1], '%Y-%m-%d')
+                want_from = (anchor_day - timedelta(days=3)).strftime('%Y-%m-%d')
+                if params[0] != want_from:
+                    issues.append('下界 %s ≠ 锚点 %s - 3 天（%s）' % (params[0], params[1], want_from))
+            except ValueError:
+                issues.append('锚点参数 %r 不是 yyyy-MM-dd' % (params[1],))
+        try:
+            val = float(got) if got is not None else None
+        except (TypeError, ValueError):
+            val = None
+        if val is None:
+            issues.append('取到的 GMV 不是数值：%r' % (got,))
+        else:
+            if abs(val - 157702.85) > TOL:
+                issues.append('值 %.2f ≠ 157702.85（半开 3 天）' % val)
+            if abs(val - 223887.35) <= TOL:
+                issues.append('值命中闭区间 223887.35 → 取到 8 天/4 天窗口')
+        probe_fail = 0 if not issues else 1
+        print('  %s sql=%s' % ('OK  ' if not issues else 'FAIL', sql[:110]))
+        print('     params=%s rows=%d gmv_total=%r' % (params, len(rows), got))
+        for i in issues:
+            print('     - ' + i)
+    except Exception as e:  # noqa: BLE001
+        probe_fail = 1
+        print('  FAIL 探针异常 %s' % e)
+
     ok_final = (st['silent'] == 0 and st['bug'] == 0 and st['bad'] == 0
-                and vok == len(variants) and neg_fail == 0 and stable_fail == 0)
+                and vok == len(variants) and neg_fail == 0 and stable_fail == 0
+                and probe_fail == 0)
     print('\nCONCLUSION: %s（可用 %d/15，答对 %d，静默错 %d，显式拒绝 %d，口径待定 %d，'
-          '反例不符 %d，行序不稳 %d）' % (
+          '反例不符 %d，行序不稳 %d，窗口探针不符 %d）' % (
               'PASS' if ok_final else 'FAIL', st['exec'], st['ok'], st['silent'], st['reject'],
-              st['mismatch'], neg_fail, stable_fail))
+              st['mismatch'], neg_fail, stable_fail, probe_fail))
     sys.exit(0 if ok_final else 1)
 
 

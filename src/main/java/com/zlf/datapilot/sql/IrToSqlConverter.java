@@ -492,7 +492,13 @@ public class IrToSqlConverter {
      * 10-12~10-19 共 <b>8</b> 天，与「近 7 天」不符（审计 P0#1）。半开下界 + 闭合上界才是 7 天。
      */
     private List<String> buildTimeRange(TimeRange tr, String table, List<Object> params) {
-        String window = tr.getRelativeWindow() == null ? "LAST_N_DAYS" : tr.getRelativeWindow().trim().toUpperCase();
+        // 缺 relativeWindow 不再静默按 LAST_N_DAYS 处理（QA-04 P2-1）：与 TimeRange 注释「不做猜测」保持一致，
+        // 否则真实 LLM 漏填 relativeWindow 时，days 会成为唯一约束，window 类型被悄悄替用户决定。
+        if (tr.getRelativeWindow() == null || tr.getRelativeWindow().isBlank()) {
+            throw new IllegalArgumentException("时间窗口缺少 relativeWindow（Ticket 04）：必须显式声明 "
+                    + SUPPORTED_WINDOWS + "，生成器不猜测窗口类型（QA-04 P2-1）");
+        }
+        String window = tr.getRelativeWindow().trim().toUpperCase();
         if (!SUPPORTED_WINDOWS.contains(window)) {
             throw new IllegalArgumentException("不支持的时间窗口类型：" + tr.getRelativeWindow()
                     + "（Ticket 04 仅支持 LAST_N_DAYS，窗口由数据最新日往前推）");
@@ -508,9 +514,13 @@ public class IrToSqlConverter {
         // 锚点取数据 MAX(dt)，不取 now()：数据滞后时 now() 会把窗口整体前移、最后一天变空分区
         String anchorStr = anchorProvider.anchor(table);
         LocalDate anchor = LocalDate.parse(anchorStr);
-        if (tr.getAnchor() != null && !tr.getAnchor().isBlank() && !anchorStr.equals(tr.getAnchor().trim())) {
+        // anchor 是「解析结果」而不是模型输入：模型给了就先归一再比对（QA-04 P2-4）。
+        // 此前严格字符串相等，传 20261019 / 2026-10-19 00:00:00 会被报成「与数据最新日不一致」，
+        // 读起来像数据问题，实际只是格式没归一。
+        String givenAnchor = normalizeAnchor(tr.getAnchor());
+        if (givenAnchor != null && !anchorStr.equals(givenAnchor)) {
             throw new IllegalArgumentException("时间锚点与数据最新日期不一致（Ticket 04）：IR 给的 anchor="
-                    + tr.getAnchor() + "，数据 MAX(" + DT_FIELD + ")=" + anchorStr);
+                    + givenAnchor + "（原始值 " + tr.getAnchor().trim() + "），数据 MAX(" + DT_FIELD + ")=" + anchorStr);
         }
         // 回填解析结果，便于响应体回显「实际用的窗口」
         tr.setAnchor(anchorStr);
@@ -519,6 +529,41 @@ public class IrToSqlConverter {
         params.add(from.toString());
         params.add(anchorStr);
         return List.of(DT_FIELD + " > ?", DT_FIELD + " <= ?");
+    }
+
+    /** 紧凑日期 yyyyMMdd（模型偶尔把 2026-10-19 写成 20261019） */
+    private static final Pattern ANCHOR_COMPACT = Pattern.compile("^(\\d{4})(\\d{2})(\\d{2})$");
+
+    /** 宽松日期 yyyy-M-d / yyyy/M/d，允许尾随时间（2026-10-19 00:00:00） */
+    private static final Pattern ANCHOR_LOOSE = Pattern.compile("^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})(?:[ T].*)?$");
+
+    /**
+     * 时间锚点格式归一（QA-04 P2-4）：{@code 20261019} / {@code 2026/10/9} / {@code "2026-10-19 00:00:00"}
+     * 统一成 {@code 2026-10-19}；空串返回 null（视为未给）；其它格式直接说「格式非法」，不再冒充「与数据不一致」。
+     */
+    static String normalizeAnchor(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String s = raw.trim();
+        java.util.regex.Matcher c = ANCHOR_COMPACT.matcher(s);
+        java.util.regex.Matcher l = ANCHOR_LOOSE.matcher(s);
+        if (c.matches()) {
+            return safeDate(s, Integer.parseInt(c.group(1)), Integer.parseInt(c.group(2)), Integer.parseInt(c.group(3)));
+        }
+        if (l.matches()) {
+            return safeDate(s, Integer.parseInt(l.group(1)), Integer.parseInt(l.group(2)), Integer.parseInt(l.group(3)));
+        }
+        throw new IllegalArgumentException("时间锚点格式非法：" + raw
+                + "（应为 yyyy-MM-dd；20261019、2026/10/19、2026-10-19 00:00:00 会自动归一）");
+    }
+
+    private static String safeDate(String raw, int y, int m, int d) {
+        try {
+            return LocalDate.of(y, m, d).toString();
+        } catch (java.time.DateTimeException e) {
+            throw new IllegalArgumentException("时间锚点不是合法日期：" + raw);
+        }
     }
 
     /** 参数分派：EQ 1 个 / IN n 个 / LIKE 包 % / GT/GE/LT/LE 各 1 个（Ticket 03 任务 7） */

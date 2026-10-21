@@ -13,6 +13,7 @@ Ticket 01c 静态验收：15 个 stub_ir/q{n}.json 齐全 + 每条可反序列�
 """
 import json
 import os
+import re
 import sys
 import urllib.request
 
@@ -20,6 +21,9 @@ HOST = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:18080'
 
 BASE = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', 'src', 'main', 'resources', 'stub_ir'))
+
+# 15 题桩的命名契约：q<整数>.json。其余文件（neg_*.json 反例桩、probe_*.json 探针）一并校验但不计入 15 题
+Q_FILE = re.compile(r'^q(\d+)\.json$')
 
 VALID_OPS = {'EQ', 'IN', 'LIKE', 'GT', 'GE', 'LT', 'LE'}
 VALID_MODES = {'AGG', 'DETAIL'}
@@ -120,34 +124,60 @@ def main():
 
     metric_ids, field_names = load_whitelist()
 
-    files = sorted(
-        (f for f in os.listdir(BASE) if f.startswith('q') and f.endswith('.json')),
-        key=lambda x: int(x[1:-5]))
+    # QA-04 P2-7：文件名只认 q<整数>.json。此前用 int(x[1:-5]) 解析，
+    # 放一个 q98_bad_anchor.json 就直接 ValueError 崩掉，连问题清单都给不出。
+    all_files = sorted(f for f in os.listdir(BASE) if f.endswith('.json'))
+    files = sorted((f for f in all_files if Q_FILE.match(f)),
+                   key=lambda x: int(Q_FILE.match(x).group(1)))
+    extra = [f for f in all_files if not Q_FILE.match(f)]
+
     expected = ['q%d.json' % i for i in range(1, 16)]
-    actual = [os.path.basename(f) for f in files]
-    missing = [e for e in expected if e not in actual]
-    assert not missing, '缺失文件: %s' % missing
-    print('文件齐全：%d 个' % len(expected))
+    errors = []
+    missing = [e for e in expected if e not in files]
+    if missing:
+        errors.append('缺失 15 题桩: %s' % missing)
+    else:
+        print('15 题桩齐全：%d 个' % len(expected))
+    if extra:
+        print('附加桩（反例/探针，不参与 15 题统计，但一并校验）：%s' % ', '.join(extra))
 
     orderby_style = {}
     used_metrics, used_fields = set(), set()
-    for name in files:
-        with open(os.path.join(BASE, name), encoding='utf-8') as fp:
-            data = json.load(fp)
-        assert 'question' in data and data['question'].strip(), '%s 缺 question' % name
-        assert 'ir' in data, '%s 缺 ir' % name
-        check_ir(data['ir'], metric_ids, field_names, orderby_style)
+    # QA-04 P2-7：不再「第一个违规就 assert 崩掉」，把每条问题收集起来一次性输出，
+    # 否则修一个跑一次，看不到同类问题有多少处。
+    for name in files + extra:
+        try:
+            with open(os.path.join(BASE, name), encoding='utf-8') as fp:
+                data = json.load(fp)
+            if not isinstance(data, dict):
+                raise AssertionError('顶层必须是 JSON 对象')
+            if not ('question' in data and str(data['question']).strip()):
+                raise AssertionError('缺 question')
+            if 'ir' not in data:
+                raise AssertionError('缺 ir')
+            # 探针桩用独立计数器，不污染 15 题的 orderBy 写法统计
+            check_ir(data['ir'], metric_ids, field_names, orderby_style if name in files else {})
+        except Exception as e:  # noqa: BLE001 —— 收集式断言：任何异常都算该文件不合法
+            errors.append('%s: %s' % (name, e))
+            print('  FAIL %-22s %s' % (name, e))
+            continue
+
         ir = data['ir']
         used_metrics.update(m['metricId'] for m in (ir.get('metrics') or []))
         used_fields.update(d['field'] for d in (ir.get('dimensions') or []))
         used_fields.update(f['field'] for f in (ir.get('filters') or []))
-        print('  OK %-8s %s' % (name, data['question']))
+        print('  OK   %-22s %s' % (name, data['question']))
 
     print('\n实引用 %d 个指标 / %d 个字段，全部在库内白名单' % (len(used_metrics), len(used_fields)))
     if orderby_style:
         print('orderBy.field 写法分布（Ticket 03 需同时支持两种）：%s'
               % json.dumps(orderby_style, ensure_ascii=False))
-    print('全部通过：%d/%d 条可反序列化且字段合法（白名单来自运行时）' % (len(files), len(expected)))
+
+    if errors:
+        print('\nFAIL：%d 处不合规（见上）' % len(errors))
+        sys.exit(1)
+    print('全部通过：%d/%d 条可反序列化且字段合法（白名单来自运行时），另有 %d 个附加桩通过'
+          % (len(files), len(expected), len(extra)))
 
 
 if __name__ == '__main__':
