@@ -84,13 +84,17 @@ INSERT IGNORE INTO metric_table (metric_id, table_name) VALUES
 ('pay_conversion_rate','ads_channel_conversion_di');
 
 -- 5. 维度字典（业务维度 → 字段映射）
+-- B6：日期维度 dt 一对多——dt 在 4 张 ADS 表都有，不绑定单一表，避免含 dt 过滤的题被「维度越界」误拦
 INSERT IGNORE INTO dimension_def (dim_name, field_name, table_name, dim_type, enum_values) VALUES
 ('渠道','channel_name','ads_channel_conversion_di','enum','["APP","小程序","网页"]'),
 ('大区','region','ads_region_gmv_di','enum','["华东","华北","华南"]'),
 ('省份','province_name','ads_region_gmv_di','enum','["江苏","上海","浙江","北京","广东"]'),
 ('类目','category_name','ads_product_sales_rank_di','enum','["办公家具","电脑外设"]'),
 ('商品','product_name','ads_product_sales_rank_di','enum','["机械键盘","4K显示器","人体工学椅"]'),
-('日期','dt','ads_trade_overview_di','time',NULL);
+('日期','dt','ads_trade_overview_di','time',NULL),
+('日期','dt','ads_channel_conversion_di','time',NULL),
+('日期','dt','ads_region_gmv_di','time',NULL),
+('日期','dt','ads_product_sales_rank_di','time',NULL);
 
 -- 6. 闸门配置（代价/结果自检默认阈值）
 INSERT IGNORE INTO gate_config (gate_name, param_key, param_value, updated_by) VALUES

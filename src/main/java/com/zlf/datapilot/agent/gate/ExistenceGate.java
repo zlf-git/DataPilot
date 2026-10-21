@@ -1,0 +1,100 @@
+package com.zlf.datapilot.agent.gate;
+
+import com.zlf.datapilot.agent.AgentContext;
+import com.zlf.datapilot.ir.DimensionRef;
+import com.zlf.datapilot.ir.Filter;
+import com.zlf.datapilot.ir.MetricRef;
+import com.zlf.datapilot.ir.OrderBy;
+import com.zlf.datapilot.ir.QueryIr;
+import com.zlf.datapilot.knowledge.OntologyCache;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+
+/**
+ * 闸门① 存在性（IR 层）：确保 IR 里每个指标/表/字段都真实存在于 Ontology 白名单，把 LLM 幻觉率压到 0。
+ * 白名单走 OntologyCache（Caffeine 缓存），O(1) 查找，不每次查库。
+ * 审计 P1#12：selectMode=DETAIL（metrics 空 + dimensions≥1）不把「无指标」当幻觉拦，否则 Q4/Q5 纯 DISTINCT 题被误拦。
+ */
+@Component
+@Order(1)
+public class ExistenceGate implements Gate {
+
+    private final OntologyCache cache;
+
+    public ExistenceGate(OntologyCache cache) {
+        this.cache = cache;
+    }
+
+    @Override
+    public String name() {
+        return "存在性";
+    }
+
+    @Override
+    public Phase phase() {
+        return Phase.IR;
+    }
+
+    @Override
+    public GateResult check(AgentContext ctx) {
+        QueryIr ir = ctx.getIr();
+        if (ir == null) {
+            return GateResult.reject("IR 为空");
+        }
+
+        boolean hasMetrics = ir.getMetrics() != null && !ir.getMetrics().isEmpty();
+        boolean hasDims = ir.getDimensions() != null && !ir.getDimensions().isEmpty();
+        if (!hasMetrics && !hasDims) {
+            return GateResult.reject("查询既无指标也无维度，超出可查询范围");
+        }
+
+        // 指标存在性 + 关联表存在性（表从 metricTables 缓存推导，不落库）
+        if (hasMetrics) {
+            for (MetricRef m : ir.getMetrics()) {
+                if (m.getMetricId() == null || !cache.metricIds().contains(m.getMetricId())) {
+                    return GateResult.reject("指标不存在或超出可查询范围：" + m.getMetricId());
+                }
+                String table = cache.metricTables().get(m.getMetricId());
+                if (table != null && !cache.tables().contains(table)) {
+                    return GateResult.reject("指标关联的表不在白名单：" + table);
+                }
+            }
+        }
+
+        // 过滤字段存在性
+        if (ir.getFilters() != null) {
+            for (Filter f : ir.getFilters()) {
+                if (f.getField() != null && !cache.fields().contains(f.getField())) {
+                    return GateResult.reject("字段不存在或超出可查询范围：" + f.getField());
+                }
+            }
+        }
+
+        // 维度字段存在性
+        if (ir.getDimensions() != null) {
+            for (DimensionRef d : ir.getDimensions()) {
+                if (d.getField() != null && !cache.fields().contains(d.getField())) {
+                    return GateResult.reject("维度字段不存在或超出可查询范围：" + d.getField());
+                }
+            }
+        }
+
+        // 排序字段存在性（field 可能是 metricId 别名，跳过）
+        if (ir.getOrderBy() != null) {
+            for (OrderBy o : ir.getOrderBy()) {
+                String f = o.getField();
+                if (f == null) {
+                    continue;
+                }
+                if (cache.metricIds().contains(f)) {
+                    continue;
+                }
+                if (!cache.fields().contains(f)) {
+                    return GateResult.reject("排序字段不存在或超出可查询范围：" + f);
+                }
+            }
+        }
+
+        return GateResult.ok();
+    }
+}

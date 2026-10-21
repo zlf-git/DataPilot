@@ -75,6 +75,17 @@ public class AgentContext {
     /** 失败信息（任一节点失败时） */
     private String errorMessage;
 
+    /** 闸门执行结果（链路透明回显，GateChain 按序追加） */
+    private List<String> gateResults = new ArrayList<>();
+
+    public List<String> getGateResults() {
+        return gateResults;
+    }
+
+    public void addGateResult(String gateResult) {
+        this.gateResults.add(gateResult);
+    }
+
     public String getTraceId() {
         return traceId;
     }

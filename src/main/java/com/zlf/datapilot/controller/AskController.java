@@ -38,15 +38,19 @@ public class AskController {
         r.setIr(ctx.getIr());
         r.setSql(ctx.getSqlCommand() != null ? ctx.getSqlCommand().sql() : null);
         r.setParams(ctx.getSqlCommand() != null ? ctx.getSqlCommand().params() : List.of());
-        // Ticket 01 闸门空实现，返回空列表
-        r.setGates(List.of());
+        // 五道闸门执行结果回显（如 [存在性=PASS, 权限=PASS, 代价=PASS, 语法=PASS, 结果自检=PASS]）
+        r.setGates(ctx.getGateResults());
         r.setRows(ctx.getQueryResult());
         r.setCostMs(costMs);
         r.setPromptTokens(ctx.getPromptTokens());
         r.setCompletionTokens(ctx.getCompletionTokens());
         r.setTotalTokens(ctx.getTotalTokens());
-        // answer/chartType/reportHtml 占位（Ticket 11 填充）；失败时把原因放进 answer 便于定位
-        r.setAnswer(ctx.getErrorMessage() != null ? ctx.getErrorMessage() : "");
+        // answer 优先取结果自检的包装文案（如「无数据」），其次取失败原因，最后空串
+        String answer = ctx.getAnswer();
+        if (answer == null || answer.isBlank()) {
+            answer = ctx.getErrorMessage() != null ? ctx.getErrorMessage() : "";
+        }
+        r.setAnswer(answer);
         r.setChartType("table");
         r.setReportHtml("");
         return r;

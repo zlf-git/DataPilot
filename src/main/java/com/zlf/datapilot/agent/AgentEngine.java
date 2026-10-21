@@ -1,10 +1,12 @@
 package com.zlf.datapilot.agent;
 
+import com.zlf.datapilot.agent.gate.Gate;
+import com.zlf.datapilot.agent.gate.GateChain;
+import com.zlf.datapilot.agent.gate.GateResult;
 import com.zlf.datapilot.agent.step.PromptBuildStep;
 import com.zlf.datapilot.agent.step.RecallStep;
 import com.zlf.datapilot.agent.step.RewriteStep;
 import com.zlf.datapilot.agent.step.SqlExecuteStep;
-import com.zlf.datapilot.agent.step.SqlValidateStep;
 import com.zlf.datapilot.ir.QueryIr;
 import com.zlf.datapilot.llm.LlmClient;
 import com.zlf.datapilot.llm.LlmGeneration;
@@ -19,7 +21,10 @@ import java.util.UUID;
 
 /**
  * Agent 编排器：把主链路串起来。
- * Rewrite → Recall → Prompt → LLM(生成 IR) → Validate(闸门) → IR→SQL → Execute。
+ * Rewrite → Recall → Prompt → LLM(生成 IR)
+ *   → 闸门阶段1(①存在性 → ②权限 → ③代价)
+ *   → IR 转 SQL → 闸门阶段2(④语法)
+ *   → 执行 → 闸门阶段3(⑤结果自检) → 返回。
  * 埋点（A1）、解释/报告（A3）、HITL（A6）等由后续 ticket 在此链路前后扩展。
  */
 @Component
@@ -31,7 +36,7 @@ public class AgentEngine {
     private final RecallStep recallStep;
     private final PromptBuildStep promptBuildStep;
     private final LlmClient llmClient;
-    private final SqlValidateStep sqlValidateStep;
+    private final GateChain gateChain;
     private final IrToSqlConverter irToSqlConverter;
     private final SqlExecuteStep sqlExecuteStep;
 
@@ -39,14 +44,14 @@ public class AgentEngine {
                        RecallStep recallStep,
                        PromptBuildStep promptBuildStep,
                        LlmClient llmClient,
-                       SqlValidateStep sqlValidateStep,
+                       GateChain gateChain,
                        IrToSqlConverter irToSqlConverter,
                        SqlExecuteStep sqlExecuteStep) {
         this.rewriteStep = rewriteStep;
         this.recallStep = recallStep;
         this.promptBuildStep = promptBuildStep;
         this.llmClient = llmClient;
-        this.sqlValidateStep = sqlValidateStep;
+        this.gateChain = gateChain;
         this.irToSqlConverter = irToSqlConverter;
         this.sqlExecuteStep = sqlExecuteStep;
     }
@@ -74,14 +79,18 @@ public class AgentEngine {
             return ctx;
         }
         ctx.setIr(ir);
-        if (ir.getMetrics() == null || ir.getMetrics().isEmpty()) {
+        // 完全空 IR（既无指标也无维度）→ 无法识别；仅 metrics 空的明细查询交给闸门/后续 ticket 处理
+        boolean noMetrics = ir.getMetrics() == null || ir.getMetrics().isEmpty();
+        boolean noDims = ir.getDimensions() == null || ir.getDimensions().isEmpty();
+        if (noMetrics && noDims) {
             ctx.setErrorMessage("无法识别查询意图，请换个问法");
             return ctx;
         }
 
-        // ⑤ 闸门（字段白名单校验，失败即拒绝并停止）
-        sqlValidateStep.execute(ctx);
-        if (ctx.getErrorMessage() != null) {
+        // ⑤ 闸门阶段1（IR 层）：①存在性 → ②权限 → ③代价
+        GateResult irGate = gateChain.runPhase(Gate.Phase.IR, ctx);
+        if (!irGate.isPass()) {
+            ctx.setErrorMessage(irGate.getReason());
             return ctx;
         }
 
@@ -95,8 +104,25 @@ public class AgentEngine {
             return ctx;
         }
 
-        // ⑦ 执行
+        // ⑦ 闸门阶段2（SQL 层）：④语法（JSqlParser 解析 + 表/字段二次比对）
+        GateResult sqlGate = gateChain.runPhase(Gate.Phase.SQL, ctx);
+        if (!sqlGate.isPass()) {
+            ctx.setErrorMessage(sqlGate.getReason());
+            return ctx;
+        }
+
+        // ⑧ 执行
         sqlExecuteStep.execute(ctx);
+        if (ctx.getErrorMessage() != null) {
+            return ctx;
+        }
+
+        // ⑨ 闸门阶段3（结果层）：⑤结果自检（空结果/超长包装，不拒绝）
+        GateResult resultGate = gateChain.runPhase(Gate.Phase.RESULT, ctx);
+        if (resultGate.getWarning() != null) {
+            ctx.setAnswer(resultGate.getWarning());
+        }
+
         return ctx;
     }
 
