@@ -103,3 +103,21 @@ SUM(total_gmv) WHERE dt='2026-10-19'                        → 53042.41  ← A2
 2. **P2-1**：响应加 `comparisonParams`（两个日期），或给 comparison 那次查询加一个 `comparison` span 落库。有了参数，`verify_session` 才能把「SQL 同模板」升级成「参数 = anchor-14 ~ anchor-7」，也才能覆盖 P1-1 这类「窗口没挪」的回归。
 3. **P2-2**：`DEFAULT_WINDOW_DAYS` 只用于「口径对齐评测集」这一种已知场景，让它显式出现在 `Round.windowDays` 里（上一轮生成 SQL 时就把实际窗口天数记下来），而不是在读的时候临时兜底。
 4. **P2-3**：`RunStatus.of` 增加一个入口标记（例如 `AgentContext.rejectedBy`：`rewrite` / `converter` / `gate`），把「改写明确拒绝」映射到 `REJECTED`；否则「拒绝率」这个指标永远为 0，全被算进失败率。
+
+---
+
+## 7. 收口复验（2026-10-21 16:40，`fb891a6`）
+
+复验在 `git archive db280a6` 固定副本（`java -jar`，端口 18090）上做，判据只有 HTTP 响应体。
+
+| 本报告条目 | 判定 | 证据 |
+|---|---|---|
+| **P1-1 单日题环比把本期当上期** | **已修复** | 单日题（`10月19日当天的总GMV是多少`，`rows=53042.41`）后问「那环比呢」→ `status=REJECTED`、`answer=上一轮是按天查询（dt = 某一天），环比需要「近 N 天」这类时间窗口，请直接问「近 7 天比前 7 天的…」`；`comparisonSql` 为 `None`、`comparisonRows` 为空 —— **没有**再出现 `环比：前 7 天：53042.41` |
+| **同源入口（DETAIL 题，无 timeRange）** | **已修复** | `华东地区有哪些省份` 后问「那环比呢」同样 `REJECTED`，不给数 |
+| **双层拦截** | 属实 | `RewriteStep` 不再把“上一轮无窗口”兜底成 7 天（`DEFAULT_WINDOW_DAYS` 已删）；`AgentEngine.runComparison` 保留 `timeRange == null` 兜底（我用 HITL 的 execute 路径也走不到第二次查询） |
+| **P2-1 环比参数不可观测** | **已修复** | 响应新增 `comparisonParams`：本期 `['2026-10-12','2026-10-19']`、环比 `['2026-10-05','2026-10-12']`，各差 7 天；`comparisonSql` 仍是 `dt > ? AND dt <= ?` 半开区间 |
+| **P2-3 `RunStatus` 无“谁拒的”标记** | **已修复** | `AgentContext.reject(reason, by)` 成对写入，`RunStatus.of` 认 `rejectedBy`；实测「那同比呢」「那渠道呢」→ `REJECTED`（此前全落 FAILED） |
+| **P2-2 `DEFAULT_WINDOW_DAYS` 兜底** | 已按建议删除，改为显式拒绝 | 同上 |
+| **回归** | 通过 | `verify_session` **21/21**（脚本已加“参数各差 7 天”判据）、`verify_traces` 31/31、`mvn -o test` 152/152 |
+
+**结论：QA-10 的 1 条 P1 + 3 条 P2 全部收口，可以从「不通过」改判为通过。** 附带把 P2-3 的收益扩散到了 Ticket 11 的 `status` 语义（明确拒绝 → REJECTED，执行故障 → FAILED），见 `QA-11-解释与报告-测试报告.md` 第 7 节。

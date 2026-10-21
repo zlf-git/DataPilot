@@ -65,6 +65,18 @@
 
 ## 修订记录
 
+### v2.20（Ticket 13 前端四页面）
+
+- **四页面落地**：`frontend/`（React18 + Vite5 + AntD5）。问数（链路透明 + HITL 两段）、指标管理、元数据/字段白名单、闸门配置
+- **问数页把「不搞黑盒」做实**：左栏结论（answer / 明细表 / 报告 iframe），右栏证据（五道闸门逐条 → SQL → 绑定参数 → IR）。参数化在页面上是**可见的**：SQL 里是 `?`，值在 params 里
+- **HITL 接进问数页**：「先预览」→ 抽屉里只开放过滤值/limit/排序方向/维度 → 「执行改动」。指标与时间窗口在抽屉里**只读**（改它们等于换问题，服务端会判 REPLAN，不如一开始不给改）
+- **后端补三个口**（票面「元数据页」原写「只读 + 白名单编辑」，但当时只有 `GET /fields`）：`GET /api/metadata/tables`、`PUT /api/metadata/fields`、`DELETE /api/metadata/fields`。删除前查引用（`dimension_def` / `metric_def.dimensions`），被引用即 400 并点名是谁在用
+- **`GET /api/health/metadata` 增 `writeEnabled`**：页面一进来自知能不能写，不用点了保存才吃 403
+- **冒烟抓出两条真 bug**：① `saveField` 的 `ON DUPLICATE KEY UPDATE` 漏了 `field_role`（改角色「返回成功但库里没变」）② `enum_values` 空串写 JSON 列报 `Invalid JSON text: empty`（写入口归一化空串→null）
+- **验收 `qa/smoke_frontend.cjs`**：真实 Chrome 无头 + 本地静态托管 dist + 同源反代。**26/26**（写接口打开）/ **23/23**（关闭）。含 HITL 改值 15604.97→20324.53、白名单增删闭环（接口侧核对无残留）、站内资源零失败、控制台零意外报错
+- 测试 **165/165**（新增 13 例 `MetadataServiceFieldTest`）；`verify_traces` 31/31、`verify_session` 21/21、`verify_explain` 142/142、`verify_hitl` 63/63、`e2e_stub` PASS 均无回归
+- 依赖安装须走国内镜像（默认 registry 实测 6 分钟拉不完，`registry.npmmirror.com` 1 分钟装完）；`dist/`、`node_modules/` 不入库
+
 ### v2.19（QA-10 / QA-11 收口：1 条 P1 + 6 条 P2）
 
 - **P1（QA-10，必修）单日题上环比把本期值当上期值**：上一轮是 `dt = 某一天` 时追问「那环比呢」，回 `本期：53042.41；环比：前 7 天：53042.41` —— 用户会读成「持平」。根因两处叠加：`RewriteStep` 在上一轮无相对窗口时把天数**兜底成 7 天**，而 `copyWithOffset` 只挪 `timeRange`、挪不动 `filters` 里的日期，环比 SQL 与本期**完全等价**

@@ -4,6 +4,7 @@ import com.zlf.datapilot.agent.hitl.PreviewStore;
 import com.zlf.datapilot.agent.session.SessionStore;
 import com.zlf.datapilot.agent.trace.SpanType;
 import com.zlf.datapilot.agent.trace.TraceSpan;
+import com.zlf.datapilot.config.DatapilotProperties;
 import com.zlf.datapilot.knowledge.EngineWhitelist;
 import com.zlf.datapilot.llm.LlmClient;
 import com.zlf.datapilot.llm.LlmDescriptor;
@@ -39,19 +40,26 @@ public class HealthController {
     private final LlmClient llmClient;
     private final SessionStore sessions;
     private final PreviewStore previews;
+    private final DatapilotProperties props;
 
     public HealthController(MetadataService service, EngineWhitelist engineWhitelist,
-                            LlmClient llmClient, SessionStore sessions, PreviewStore previews) {
+                            LlmClient llmClient, SessionStore sessions, PreviewStore previews,
+                            DatapilotProperties props) {
         this.service = service;
         this.engineWhitelist = engineWhitelist;
         this.llmClient = llmClient;
         this.sessions = sessions;
         this.previews = previews;
+        this.props = props;
     }
 
     @GetMapping("/metadata")
     public Map<String, Object> metadataHealth() {
-        return service.metadataHealth();
+        // Ticket 13：把写开关也透出来。前端元数据页据此决定「编辑按钮能不能点」——
+        // 与其让人点了保存吃一个 403，不如一进页面就知道现在是只读状态
+        Map<String, Object> out = new LinkedHashMap<>(service.metadataHealth());
+        out.put("writeEnabled", props.getMetadata().isWriteEnabled());
+        return out;
     }
 
     @GetMapping("/engine")

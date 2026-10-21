@@ -21,6 +21,17 @@ public class GateConfig {
 
     private String updatedBy;
 
+    /** 最近一次修改时间（Ticket 13 只读回显，写接口忽略该字段，由库的 ON UPDATE 维护） */
+    private String updateTime;
+
+    public String getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(String updateTime) {
+        this.updateTime = updateTime;
+    }
+
     public Long getId() {
         return id;
     }

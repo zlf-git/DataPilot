@@ -1,0 +1,5 @@
+# 前端构建产物与依赖不提交
+node_modules/
+dist/
+.vite/
+*.local

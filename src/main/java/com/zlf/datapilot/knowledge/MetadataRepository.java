@@ -86,6 +86,9 @@ public class MetadataRepository {
         return m;
     };
 
+    /** 闸门配置列（Ticket 13 补 update_time：管理员调阈值后要能看见「什么时候被谁改的」） */
+    private static final String GATE_COLUMNS = "id, gate_name, param_key, param_value, updated_by, update_time";
+
     private static final RowMapper<GateConfig> GATE_MAPPER = (rs, i) -> {
         GateConfig g = new GateConfig();
         g.setId(rs.getLong("id"));
@@ -93,6 +96,8 @@ public class MetadataRepository {
         g.setParamKey(rs.getString("param_key"));
         g.setParamValue(rs.getString("param_value"));
         g.setUpdatedBy(rs.getString("updated_by"));
+        java.sql.Timestamp ts = rs.getTimestamp("update_time");
+        g.setUpdateTime(ts == null ? null : ts.toLocalDateTime().toString().replace('T', ' '));
         return g;
     };
 
@@ -178,13 +183,13 @@ public class MetadataRepository {
 
     public List<GateConfig> listGateConfigs() {
         return jdbc.query(
-                "SELECT id, gate_name, param_key, param_value, updated_by FROM gate_config",
+                "SELECT " + GATE_COLUMNS + " FROM gate_config",
                 GATE_MAPPER);
     }
 
     public GateConfig findGateConfig(String gateName, String paramKey) {
         List<GateConfig> list = jdbc.query(
-                "SELECT id, gate_name, param_key, param_value, updated_by FROM gate_config WHERE gate_name = ? AND param_key = ?",
+                "SELECT " + GATE_COLUMNS + " FROM gate_config WHERE gate_name = ? AND param_key = ?",
                 GATE_MAPPER, gateName, paramKey);
         return list.isEmpty() ? null : list.get(0);
     }
@@ -211,10 +216,53 @@ public class MetadataRepository {
     }
 
     public void saveField(FieldMetadata f) {
+        // Ticket 13：原来这里漏了 field_role —— 白名单编辑页把角色从 dimension 改成 metric 后
+        // 接口返回成功、库里没变，是「假成功」。四列一起进 INSERT 与 ON DUPLICATE。
         jdbc.update(
-                "INSERT INTO field_metadata (table_name, field_name, field_type, field_comment, enum_values) VALUES (?, ?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE field_type = VALUES(field_type), field_comment = VALUES(field_comment), enum_values = VALUES(enum_values)",
-                f.getTableName(), f.getFieldName(), f.getFieldType(), f.getFieldComment(), f.getEnumValues());
+                "INSERT INTO field_metadata (table_name, field_name, field_type, field_comment, field_role, enum_values) " +
+                "VALUES (?, ?, ?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE field_type = VALUES(field_type), field_comment = VALUES(field_comment), " +
+                "field_role = VALUES(field_role), enum_values = VALUES(enum_values)",
+                f.getTableName(), f.getFieldName(), f.getFieldType(), f.getFieldComment(),
+                f.getFieldRole(), f.getEnumValues());
+    }
+
+    /** 单字段查询（Ticket 13 白名单编辑回显 / 删除前存在性确认） */
+    public FieldMetadata findField(String tableName, String fieldName) {
+        List<FieldMetadata> list = jdbc.query(
+                "SELECT " + FIELD_COLUMNS + " FROM field_metadata WHERE table_name = ? AND field_name = ?",
+                FIELD_MAPPER, tableName, fieldName);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    /** 删除一个字段（= 从白名单摘掉；Ticket 13 元数据页的「移出白名单」） */
+    public int deleteField(String tableName, String fieldName) {
+        return jdbc.update(
+                "DELETE FROM field_metadata WHERE table_name = ? AND field_name = ?",
+                tableName, fieldName);
+    }
+
+    /**
+     * 该字段被维度字典引用的条数（Ticket 13 删除前守卫）。
+     * dimension_def 是「业务维度 → 字段」映射，字段被摘掉后映射会指向不存在的列，
+     * 存在性闸门仍能放行一条注定 JDBC 报错的 IR —— 所以引用中的字段不许从白名单摘。
+     */
+    public int countDimensionRefs(String tableName, String fieldName) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM dimension_def WHERE table_name = ? AND field_name = ?",
+                Integer.class, tableName, fieldName);
+        return n == null ? 0 : n;
+    }
+
+    /**
+     * 把该字段列进 dimensions 的指标（Ticket 13 删除前守卫）。
+     * metric_def.dimensions 是逗号分隔字符串，用 FIND_IN_SET 精确匹配，
+     * 不能用 LIKE '%dt%' 之类 —— 'dt' 会命中 'create_dt'。
+     */
+    public List<String> metricIdsUsingField(String fieldName) {
+        return jdbc.queryForList(
+                "SELECT metric_id FROM metric_def WHERE FIND_IN_SET(?, REPLACE(dimensions, ' ', '')) > 0",
+                String.class, fieldName);
     }
 
     public void saveMetric(MetricDef m) {

@@ -5,6 +5,7 @@ import com.zlf.datapilot.knowledge.MetadataRepository;
 import com.zlf.datapilot.knowledge.model.FieldMetadata;
 import com.zlf.datapilot.knowledge.model.GateConfig;
 import com.zlf.datapilot.knowledge.model.MetricDef;
+import com.zlf.datapilot.knowledge.model.SemanticModel;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +34,15 @@ public class MetadataService {
     /** 表名格式：跨表占比的分母表来自元数据，仍过一遍格式校验 */
     private static final Pattern TABLE_NAME = Pattern.compile("^[a-z_][a-z0-9_]*$");
 
+    /** 字段角色白名单（Ticket 13）：落库前归一化，杜绝 'Dimension'/'维度' 之类拼进白名单 */
+    private static final Map<String, String> FIELD_ROLES = Map.of(
+            "dimension", "dimension",
+            "metric", "metric");
+
+    /** enum_values 只做语法校验用的 ObjectMapper（不参与序列化，纯判「是不是 JSON 数组」） */
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
     /** 闸门参数键 → 所属闸门的规范映射（写 gate 时按 param_key 归一化 gate_name，杜绝拼出幽灵行） */
     private static final Map<String, String> GATE_PARAM_TO_GATE = Map.of(
             "max_join", "cost",
@@ -50,6 +60,11 @@ public class MetadataService {
 
     public List<FieldMetadata> listFields() {
         return repo.listAllFields();
+    }
+
+    /** 表清单（Ticket 13 元数据页左侧列表；只读，表的增删不在本票范围） */
+    public List<SemanticModel> listTables() {
+        return repo.listTables();
     }
 
     public List<MetricDef> listMetrics() {
@@ -73,6 +88,107 @@ public class MetadataService {
 
     public List<GateConfig> listGateConfigs() {
         return repo.listGateConfigs();
+    }
+
+    /**
+     * 字段白名单写入（Ticket 13）：元数据页「字段白名单编辑」的落点。
+     *
+     * <p>为什么校验得这么细：{@code field_metadata} 不只是展示用的注释表，它就是
+     * 存在性/语法闸门的字段白名单（{@code OntologyCache.fields()/tableFields()}）。
+     * 随手写错一条，后果是「闸门放行一个不存在的列」→ 一路到 JDBC 才炸；
+     * 或者「表名写错」→ 白名单里挂着一张 semantic_model 里没有的表。
+     * 所以三件事在写库前拦掉：表必须已注册、字段名/表名合法、角色与枚举值合法。
+     */
+    public FieldMetadata putField(FieldMetadata f) {
+        if (f == null) {
+            throw new IllegalArgumentException("字段定义不能为空");
+        }
+        validateFieldName(f.getTableName(), "table_name");
+        validateFieldName(f.getFieldName(), "field_name");
+
+        // 表必须先注册（Ticket 13）：白名单是按 table.field 复合键比对的，
+        // 表不在 semantic_model 里，这条字段永远匹配不上，属于「配了等于没配」的幽灵数据
+        boolean tableKnown = repo.listTables().stream()
+                .anyMatch(t -> f.getTableName().equals(t.getTableName()));
+        if (!tableKnown) {
+            throw new IllegalArgumentException(
+                    "table_name「" + f.getTableName() + "」未在 semantic_model 注册，不能先加字段");
+        }
+
+        // 角色归一化：空 = 不标；非空必须落在白名单内（历史数据里有写 '维度' 的，这里明确拒绝而不是默默存）
+        String role = f.getFieldRole() == null ? null : f.getFieldRole().trim().toLowerCase();
+        if (role != null && !role.isEmpty() && !FIELD_ROLES.containsKey(role)) {
+            throw new IllegalArgumentException(
+                    "field_role 非法：" + f.getFieldRole() + "（只允许 dimension / metric / 留空）");
+        }
+        f.setFieldRole(role == null || role.isEmpty() ? null : role);
+
+        // 空串 ≠ null：enum_values 在库里是 JSON 列，写 '' 会被 MySQL 判为
+        // 「Invalid JSON text: The document is empty」直接 500/400。
+        // 「留空 = 没有枚举」这条语义必须由写入口归一化，不能让每个调用方各自记得传 null。
+        f.setEnumValues(f.getEnumValues() == null || f.getEnumValues().isBlank()
+                ? null : f.getEnumValues().trim());
+
+        validateEnumValues(f.getEnumValues());
+
+        repo.saveField(f);
+        publisher.publishEvent(new MetadataChangedEvent("field", f.getTableName() + "." + f.getFieldName()));
+        return f;
+    }
+
+    /**
+     * 把字段移出白名单（Ticket 13）。
+     *
+     * <p>这是本票唯一会造成「能力下降」的写操作，所以先查引用：
+     * 维度字典指着它、或某个指标的可用维度里列了它 —— 直接 400 并说清是谁在用。
+     * 不做级联删除：删字段顺手删掉别人维度定义，比拒绝更难排查。
+     */
+    public void deleteField(String tableName, String fieldName) {
+        validateFieldName(tableName, "table_name");
+        validateFieldName(fieldName, "field_name");
+        FieldMetadata existing = repo.findField(tableName, fieldName);
+        if (existing == null) {
+            throw new IllegalArgumentException(
+                    "字段不存在：" + tableName + "." + fieldName + "（刷新页面看看是不是已被别人摘掉）");
+        }
+        int dimRefs = repo.countDimensionRefs(tableName, fieldName);
+        if (dimRefs > 0) {
+            throw new IllegalArgumentException(
+                    "字段 " + tableName + "." + fieldName + " 仍被维度字典引用（" + dimRefs
+                            + " 条），请先改 dimension_def 再摘白名单");
+        }
+        List<String> metricRefs = repo.metricIdsUsingField(fieldName);
+        if (!metricRefs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "字段 " + fieldName + " 仍出现在指标可用维度中（" + String.join(", ", metricRefs)
+                            + "），请先改 metric_def.dimensions 再摘白名单");
+        }
+        repo.deleteField(tableName, fieldName);
+        publisher.publishEvent(new MetadataChangedEvent("field", tableName + "." + fieldName));
+    }
+
+    private void validateFieldName(String v, String label) {
+        if (v == null || v.isBlank()) {
+            throw new IllegalArgumentException(label + " 不能为空");
+        }
+        if (!TABLE_NAME.matcher(v).matches()) {
+            throw new IllegalArgumentException(label + " 非法：" + v + "（只允许小写字母/数字/下划线，字母或下划线开头）");
+        }
+    }
+
+    /** enum_values 若是字符串，必须是 JSON 数组（前端建议值靠它渲染，坏 JSON 会让页面白屏而不是报错） */
+    private void validateEnumValues(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+        try {
+            var node = JSON.readTree(raw);
+            if (!node.isArray()) {
+                throw new IllegalArgumentException("enum_values 必须是 JSON 数组，如 [\"APP\",\"小程序\"]");
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException("enum_values 不是合法 JSON：" + e.getOriginalMessage());
+        }
     }
 
     public GateConfig putGateConfig(GateConfig g) {
