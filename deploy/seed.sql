@@ -102,3 +102,12 @@ INSERT IGNORE INTO gate_config (gate_name, param_key, param_value, updated_by) V
 ('cost','max_metric','3','数据开发'),
 ('cost','max_limit','1000','数据开发'),
 ('result','max_rows','1000','数据开发');
+
+-- 7. few-shot 示例（Ticket 03 任务 8：日期归一化，只说月日也要补年份）
+-- few_shot_example 无唯一键，用 NOT EXISTS 保证 seed 可重复执行不重复插
+INSERT INTO few_shot_example (question, `sql`, biz_domain)
+SELECT '10月19日当天的总GMV是多少',
+       '{"selectMode":"AGG","metrics":[{"metricId":"gmv_total"}],"filters":[{"field":"dt","op":"EQ","value":"2026-10-19"}]}',
+       '交易'
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM few_shot_example WHERE question = '10月19日当天的总GMV是多少');

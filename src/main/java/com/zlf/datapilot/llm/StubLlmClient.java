@@ -67,7 +67,10 @@ public class StubLlmClient implements LlmClient {
         g.setTotalTokens(STUB_PROMPT_TOKENS + STUB_COMPLETION_TOKENS);
 
         if (userPrompt != null) {
-            String normPrompt = normalize(userPrompt);
+            // 只拿「真实问题」那一行做匹配，不对整段 prompt 做 contains：
+            // prompt 里还有指标清单/DDL/few-shot，few-shot 的示例问题会和真问题撞车
+            // （Ticket 03 踩过：注入的 few-shot 就是 Q1 原题，导致所有问题都命中 Q1）。
+            String normPrompt = normalize(extractQuestion(userPrompt));
             for (StubEntry e : entries) {
                 if (!e.normalizedQuestion.isEmpty() && normPrompt.contains(e.normalizedQuestion)) {
                     // 部分匹配（prompt 比 stub 题面长）：可能是寒暄包裹，也可能是双意向拼接。
@@ -84,6 +87,22 @@ public class StubLlmClient implements LlmClient {
         // 未命中任何 stub：返回空 IR（metrics 为空），由 AgentEngine 报「无法识别查询意图」
         g.setIr(new QueryIr());
         return g;
+    }
+
+    /**
+     * 从 prompt 里抽出「真实问题」：PromptBuildStep 的第一行固定是 {@code 问题：<question>}，
+     * 后面才是指标清单/DDL/few-shot。取第一处「问题：」到行尾，避免 few-shot 示例问题污染匹配。
+     * 没有该标记时退回整段 prompt（兼容自定义 prompt）。
+     */
+    private static String extractQuestion(String prompt) {
+        int idx = prompt.indexOf("问题：");
+        if (idx < 0) {
+            return prompt;
+        }
+        int start = idx + "问题：".length();
+        int end = prompt.indexOf('\n', start);
+        String q = end > 0 ? prompt.substring(start, end) : prompt.substring(start);
+        return q.isBlank() ? prompt : q;
     }
 
     /**

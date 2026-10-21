@@ -3,17 +3,29 @@
   "ir": {
     "question": "10月19日GMV最高的省份是哪个",
     "metrics": [
-      { "metricId": "gmv_region" }
+      {
+        "metricId": "gmv_region"
+      }
     ],
     "dimensions": [
-      { "field": "province_name" }
+      {
+        "field": "province_name"
+      }
     ],
     "filters": [
-      { "field": "dt", "op": "EQ", "value": "2026-10-19" }
+      {
+        "field": "dt",
+        "op": "EQ",
+        "value": "2026-10-19"
+      }
     ],
     "orderBy": [
-      { "field": "gmv_region", "direction": "desc" }
+      {
+        "field": "gmv_region",
+        "direction": "desc"
+      }
     ],
-    "limit": 1
+    "limit": 1,
+    "selectMode": "AGG"
   }
 }

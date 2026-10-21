@@ -1,122 +1,131 @@
 {
-  "_comment": "评测集 15 题的期望状态表。被 qa/e2e_stub.py 与后续 Ticket 06b（run_eval）共用，避免两处判据漂移。status: OK=应当答对并给出值；BLOCKED=本票尚不可用，但必须显式拒绝（sql=null + answer 说明），不许静默返回错值。blocker 用于失败归因。requires 列出该题必须的 SQL 能力，供脚本检测「静默降级」。",
-  "source": "docs/评测集.md",
+  "_comment": "评测集 15 题期望状态表，被 qa/e2e_stub.py 与后续 06b（run_eval）共用，避免两处判据漂移。status: OK=应执行且值对拍；BLOCKED=本票不可用但必须显式拒绝（sql=null 且 answer 含 blocker）。rows=期望结果行（集合比对，数值容差 0.011）。sqlMust=SQL 结构断言（Ticket 03 的引擎验收）。caliberPending=值能算出但口径/时间窗待 04/05，不算失败但要持续可见。blame=值不符时的归因票号。",
+  "source": "docs/评测集.md + StarRocks mall_dw 实查（2026-10-21）",
   "items": [
     {
       "no": 1,
       "question": "10月19日当天的总GMV是多少？",
       "status": "OK",
-      "values": { "gmv_total": 53042.41 }
+      "rows": [{ "gmv_total": 53042.41 }],
+      "sqlMust": ["WHERE dt = ?", "LIMIT"]
     },
     {
       "no": 2,
       "question": "近7天累计支付订单数是多少？",
       "status": "OK",
-      "values": { "paid_order_cnt": 69 },
-      "caliberPending": "Ticket 04：IR 无 timeRange，当前值正确仅因表内恰好只有 7 天数据，数据延长后即偏"
+      "rows": [{ "paid_order_cnt": 69 }],
+      "sqlMust": ["LIMIT"],
+      "caliberPending": "Ticket 04：IR 无 timeRange，值正确仅因表内恰好 7 天数据，数据延长后即偏"
     },
     {
       "no": 3,
       "question": "10月19日小程序渠道的GMV是多少？",
       "status": "OK",
-      "values": { "gmv_channel": 15604.97 }
+      "rows": [{ "gmv_channel": 15604.97 }],
+      "sqlMust": ["WHERE dt = ?", "channel_name = ?"]
     },
     {
       "no": 4,
       "question": "华东地区有哪些省份？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "DETAIL/DISTINCT 模式（metrics 空 + dimensions）未实现",
-      "requires": ["DISTINCT"]
+      "status": "OK",
+      "rows": [
+        { "province_name": "上海" },
+        { "province_name": "江苏" },
+        { "province_name": "浙江" }
+      ],
+      "sqlMust": ["SELECT DISTINCT", "FROM ads_region_gmv_di", "WHERE region = ?"]
     },
     {
       "no": 5,
       "question": "电脑外设类目下有哪些商品？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "DETAIL/DISTINCT 模式未实现",
-      "requires": ["DISTINCT"]
+      "status": "OK",
+      "rows": [
+        { "product_name": "4K显示器" },
+        { "product_name": "机械键盘" }
+      ],
+      "sqlMust": ["SELECT DISTINCT", "FROM ads_product_sales_rank_di", "WHERE category_name = ?"],
+      "caliberPending": "评测集写 3 个（含人体工学椅），库内电脑外设只有 2 个（人体工学椅属办公家具）→ 06b 需修正评测集"
     },
     {
       "no": 6,
       "question": "10月19日各渠道的支付转化率分别是多少？按转化率从高到低排序。",
-      "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "维度分组 GROUP BY + 别名排序 ORDER BY 未实现",
-      "requires": ["GROUP BY", "ORDER BY"]
+      "status": "OK",
+      "rows": [
+        { "channel_name": "APP", "pay_conversion_rate": 1.0 },
+        { "channel_name": "小程序", "pay_conversion_rate": 1.0 },
+        { "channel_name": "网页", "pay_conversion_rate": 0.75 }
+      ],
+      "sqlMust": ["GROUP BY channel_name", "ORDER BY pay_conversion_rate DESC"],
+      "caliberPending": "Ticket 05 待裁定口径：评测集预期 0.1/0.1/0.075 = paid_order_cnt/visit_uv；seed 口径 pay_conversion_rate = SUM(paid_order_cnt)/SUM(order_cnt) → 1/1/0.75。两者不等，05 二选一并同步评测集"
     },
     {
       "no": 7,
       "question": "10月19日GMV最高的省份是哪个？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "维度分组 + 排序 + LIMIT 未实现",
-      "requires": ["GROUP BY", "ORDER BY", "LIMIT"]
+      "status": "OK",
+      "rows": [{ "province_name": "上海", "gmv_region": 15695.05 }],
+      "sqlMust": ["GROUP BY province_name", "ORDER BY gmv_region DESC", "LIMIT 1"]
     },
     {
       "no": 8,
       "question": "10月19日销量排名前三的商品是哪些？",
       "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "DETAIL + 排序 + LIMIT 未实现",
-      "alsoNeeds": "Ticket 05：DETAIL 落地后仍需 sale_cnt_product 指标，否则按底层字段 sale_cnt 排序不可靠",
+      "blocker": "Ticket 05",
+      "reason": "DETAIL 已实现，但按销量排序需要 sale_cnt_product 聚合指标（当前 orderBy 用底层字段 sale_cnt，DISTINCT 结果列里没有它）",
       "requires": ["DISTINCT", "ORDER BY", "LIMIT"]
     },
     {
       "no": 9,
       "question": "10月19日支付订单数占总订单数的比例（支付率）是多少？",
       "status": "OK",
-      "values": { "pay_rate": 0.9 }
+      "rows": [{ "pay_rate": 0.9 }],
+      "sqlMust": ["WHERE dt = ?"]
     },
     {
       "no": 10,
       "question": "10月19日华北地区的订单量是多少？",
       "status": "OK",
-      "values": { "order_cnt_region": 2 }
+      "rows": [{ "order_cnt_region": 2 }],
+      "sqlMust": ["WHERE dt = ?", "region = ?"]
     },
     {
       "no": 11,
       "question": "近7天GMV最高的渠道是哪个？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "维度分组 + 排序 + LIMIT 未实现",
-      "requires": ["GROUP BY", "ORDER BY", "LIMIT"],
+      "status": "OK",
+      "rows": [{ "channel_name": "APP", "gmv_channel": 138821.73 }],
+      "sqlMust": ["GROUP BY channel_name", "ORDER BY gmv_channel DESC", "LIMIT 1"],
       "caliberPending": "Ticket 04：无 timeRange"
     },
     {
       "no": 12,
       "question": "近7天GMV最高的大区是哪个？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "维度分组 + 排序 + LIMIT 未实现",
-      "requires": ["GROUP BY", "ORDER BY", "LIMIT"],
+      "status": "OK",
+      "rows": [{ "region": "华东", "gmv_region": 254466.85 }],
+      "sqlMust": ["GROUP BY region", "ORDER BY gmv_region DESC", "LIMIT 1"],
       "caliberPending": "Ticket 04：无 timeRange"
     },
     {
       "no": 13,
       "question": "近7天销售额最高的商品类目是哪个？金额多少？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "维度分组 + 排序 + LIMIT 未实现",
-      "requires": ["GROUP BY", "ORDER BY", "LIMIT"],
+      "status": "OK",
+      "rows": [{ "category_name": "电脑外设", "sale_amount_product": 293469.91 }],
+      "sqlMust": ["GROUP BY category_name", "ORDER BY sale_amount_product DESC", "LIMIT 1"],
       "caliberPending": "Ticket 04：无 timeRange"
     },
     {
       "no": 14,
       "question": "近7天里总GMV最高的是哪一天？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "DETAIL 按日期分组 + 排序 + LIMIT 未实现",
-      "requires": ["DISTINCT", "ORDER BY", "LIMIT"],
-      "caliberPending": "Ticket 04：无 timeRange"
+      "status": "OK",
+      "rows": [{ "dt": "2026-10-16", "gmv_total": 66184.5 }],
+      "sqlMust": ["GROUP BY dt", "ORDER BY gmv_total DESC", "LIMIT 1"],
+      "caliberPending": "Ticket 04：无 timeRange（stub 已由 01c 的 DETAIL 形态改为 AGG）"
     },
     {
       "no": 15,
       "question": "10月19日各渠道GMV占当天总GMV的比例分别是多少？",
       "status": "BLOCKED",
-      "blocker": "Ticket 03",
-      "reason": "维度分组未实现；且占比语义在 IR 里没有表达：q15 现用 gmv_channel，与「各渠道GMV」逐字段同形",
-      "alsoNeeds": "Ticket 05：必须改用 gmv_channel_ratio（跨表分母 denominator_table/denominator_sql）。若 03 单独落地，Q15 会从「显式拒绝」退化成「返回各渠道GMV」的静默错",
+      "blocker": "Ticket 05",
+      "reason": "占比语义已在 IR 用 ratio{分子,分母} 声明，但占比计算（跨表/跨指标分母）未实现",
+      "alsoNeeds": "Ticket 05：可用 gmv_channel_ratio 复合指标或直接吃 ratio 字段，二者需在 05 定稿统一",
       "requires": ["GROUP BY", "RATIO"]
     }
   ]

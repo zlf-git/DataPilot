@@ -174,3 +174,29 @@ public QueryIr ask(String question) {
 | 不输出 SQL | 约束规则 6 | 执行器只收 IR |
 
 > Prompt 是「软约束」，五道闸门是「硬兜底」——LLM 违反 Prompt 也不会造成安全事故，因为闸门在 IR 层和 SQL 层再次拦截。
+
+---
+
+## 6. Ticket 03 补充：selectMode 与日期归一化（已落到 PromptBuildStep）
+
+### 6.1 selectMode 语义（LLM 必须区分）
+
+| 模式 | 触发问法 | metrics | dimensions | 生成 SQL |
+|---|---|---|---|---|
+| AGG | 「多少钱」「多少个」「最高/最低」「比例」 | 必填 | 非空即 GROUP BY | `SELECT dims, metric_sql AS metricId ... GROUP BY dims` |
+| DETAIL | 「有哪些」「列出」「都有谁」 | 必须为空 | 必填 | `SELECT DISTINCT dims ...` |
+
+不分 selectMode 的后果：LLM 会把「华东有哪些省份」也塞一个 count 指标，或者把「各省份GMV」写成明细，两种都跑得出数但答非所问。
+
+### 6.2 日期归一化规则（Ticket 03 任务 8）
+
+1. 只说「10月19日」没写年份 → 补成今年（`{today.year}`），输出 `yyyy-MM-dd`；
+2. 「今天/昨天/最近/近7天」没落到具体日期 → 以数据最新日为准（**不用系统当前日期**，否则查到空集）；
+3. 所有 `dt` 过滤值输出完整 `yyyy-MM-dd` 字符串。
+
+运行时 prompt 里注入 `今天是 yyyy-MM-dd（年份 yyyy）`（`PromptBuildStep` 用 `Asia/Shanghai` 时区计算），并配 1 条 few-shot：
+「10月19日当天的总GMV是多少」→ `{"selectMode":"AGG","metrics":[{"metricId":"gmv_total"}],"filters":[{"field":"dt","op":"EQ","value":"2026-10-19"}]}`。
+
+### 6.3 未实现语义的显式拒绝（与 01c 失败契约一致）
+
+Prompt 里让 LLM 照常输出 `ratio{分子,分母}` 声明占比意图，但生成器遇到 `ratio` 会**显式拒绝**（「占比计算未实现（Ticket 05）」），不会降级成普通聚合返回各渠道GMV——降级会静默出错值。

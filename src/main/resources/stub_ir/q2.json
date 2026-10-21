@@ -3,7 +3,10 @@
   "ir": {
     "question": "近7天累计支付订单数是多少",
     "metrics": [
-      { "metricId": "paid_order_cnt" }
-    ]
+      {
+        "metricId": "paid_order_cnt"
+      }
+    ],
+    "selectMode": "AGG"
   }
 }

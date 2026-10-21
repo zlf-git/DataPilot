@@ -3,10 +3,17 @@
   "ir": {
     "question": "10月19日支付订单数占总订单数的比例（支付率）是多少",
     "metrics": [
-      { "metricId": "pay_rate" }
+      {
+        "metricId": "pay_rate"
+      }
     ],
     "filters": [
-      { "field": "dt", "op": "EQ", "value": "2026-10-19" }
-    ]
+      {
+        "field": "dt",
+        "op": "EQ",
+        "value": "2026-10-19"
+      }
+    ],
+    "selectMode": "AGG"
   }
 }

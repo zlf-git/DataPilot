@@ -22,6 +22,7 @@ BASE = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', 'src', 'main', 'resources', 'stub_ir'))
 
 VALID_OPS = {'EQ', 'IN', 'LIKE', 'GT', 'GE', 'LT', 'LE'}
+VALID_MODES = {'AGG', 'DETAIL'}
 
 
 def get_json(path):
@@ -64,6 +65,24 @@ def check_ir(ir, metric_ids, field_names, orderby_style):
     assert isinstance(order_by, list), 'orderBy 必须是数组'
     for m in metrics:
         assert m.get('metricId') in metric_ids, '指标不在库内白名单: %r' % m.get('metricId')
+
+    # selectMode（Ticket 03）：AGG 必须带指标；DETAIL 必须无指标且至少 1 个维度
+    mode = ir.get('selectMode')
+    if mode is not None:
+        assert mode in VALID_MODES, '非法 selectMode: %r' % mode
+    effective = mode or ('AGG' if metrics else 'DETAIL')
+    if effective == 'AGG':
+        assert metrics, 'AGG 模式必须至少 1 个指标'
+    else:
+        assert not metrics, 'DETAIL 模式必须没有指标（当前 %d 个）' % len(metrics)
+        assert dimensions, 'DETAIL 模式必须至少 1 个维度'
+
+    # ratio（Ticket 03 引入的占比声明）：分子/分母都必须是真实指标
+    ratio = ir.get('ratio')
+    if ratio is not None:
+        for key in ('numerator', 'denominator'):
+            val = ratio.get(key)
+            assert val in metric_ids, '占比 %s 不在指标白名单: %r' % (key, val)
     for d in dimensions:
         assert d.get('field') in field_names, '维度字段不在白名单: %r' % d.get('field')
     for f in filters:

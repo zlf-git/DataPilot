@@ -8,27 +8,40 @@ import java.util.List;
  * 执行器只认落在 Ontology 白名单内的表/字段/指标，从根上堵幻觉与注入。
  *
  * <p>Ticket 01 基础结构：question + metrics + dimensions + filters + orderBy + limit，
- * 够单指标聚合 + 单表 + 等值过滤（Q1）。selectMode/timeRange/复合指标由 03/04/05 扩展。
+ * 够单指标聚合 + 单表 + 等值过滤（Q1）。selectMode/ratio 由 Ticket 03 引入，
+ * timeRange 由 04 引入，复合指标计算由 05 引入。
  */
 public class QueryIr {
 
     /** 原始问题（回显用） */
     private String question;
 
-    /** 指标引用（聚合查询时非空；DETAIL 明细模式由 Ticket 03 引入后允许为空） */
+    /**
+     * 查询模式：AGG（聚合，metrics 必填）/ DETAIL（明细 DISTINCT，metrics 必须为空）。
+     * 空时按 metrics 推断（有指标=AGG，无指标=DETAIL），兼容 01c 期间的旧 stub。
+     */
+    private SelectMode selectMode;
+
+    /** 指标引用（聚合查询时非空；DETAIL 明细模式必须为空） */
     private List<MetricRef> metrics = new ArrayList<>();
 
-    /** 维度引用（分组/明细维度） */
+    /** 维度引用（AGG 时 GROUP BY，DETAIL 时 SELECT DISTINCT 的列） */
     private List<DimensionRef> dimensions = new ArrayList<>();
 
     /** 过滤条件（value 走参数化绑定） */
     private List<Filter> filters = new ArrayList<>();
 
-    /** 排序（Ticket 01 结构预留，生成器暂不实现） */
+    /** 排序（field 可为 metricId 或字段名；Ticket 03 支持按聚合别名排序） */
     private List<OrderBy> orderBy = new ArrayList<>();
 
-    /** 结果条数上限（空时由后续 ticket 注入 gate_config.max_rows 兜底） */
+    /** 结果条数上限（空时由生成器注入 gate_config.max_rows 兜底） */
     private Integer limit;
+
+    /**
+     * 占比语义声明（分子/分母指标）。仅在「A 占 B 的比例」类问题出现，
+     * Ticket 03 遇到即显式拒绝，计算由 Ticket 05 落地。
+     */
+    private RatioRef ratio;
 
     public String getQuestion() {
         return question;
@@ -36,6 +49,22 @@ public class QueryIr {
 
     public void setQuestion(String question) {
         this.question = question;
+    }
+
+    public SelectMode getSelectMode() {
+        return selectMode;
+    }
+
+    public void setSelectMode(SelectMode selectMode) {
+        this.selectMode = selectMode;
+    }
+
+    public RatioRef getRatio() {
+        return ratio;
+    }
+
+    public void setRatio(RatioRef ratio) {
+        this.ratio = ratio;
     }
 
     public List<MetricRef> getMetrics() {

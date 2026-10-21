@@ -3,14 +3,22 @@
   "ir": {
     "question": "近7天GMV最高的大区是哪个",
     "metrics": [
-      { "metricId": "gmv_region" }
+      {
+        "metricId": "gmv_region"
+      }
     ],
     "dimensions": [
-      { "field": "region" }
+      {
+        "field": "region"
+      }
     ],
     "orderBy": [
-      { "field": "gmv_region", "direction": "desc" }
+      {
+        "field": "gmv_region",
+        "direction": "desc"
+      }
     ],
-    "limit": 1
+    "limit": 1,
+    "selectMode": "AGG"
   }
 }

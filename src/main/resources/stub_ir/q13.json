@@ -3,14 +3,22 @@
   "ir": {
     "question": "近7天销售额最高的商品类目是哪个？金额多少",
     "metrics": [
-      { "metricId": "sale_amount_product" }
+      {
+        "metricId": "sale_amount_product"
+      }
     ],
     "dimensions": [
-      { "field": "category_name" }
+      {
+        "field": "category_name"
+      }
     ],
     "orderBy": [
-      { "field": "sale_amount_product", "direction": "desc" }
+      {
+        "field": "sale_amount_product",
+        "direction": "desc"
+      }
     ],
-    "limit": 1
+    "limit": 1,
+    "selectMode": "AGG"
   }
 }

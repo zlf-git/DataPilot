@@ -57,14 +57,31 @@ public class SqlValidator {
         }
 
         // 字段名二次比对
+        // 注意：ORDER BY 里可能引用 SELECT 的别名（如 ORDER BY gmv_channel），别名不是表字段，
+        // 必须排除，否则 Ticket 03 的「按聚合别名排序」会被自己的语法闸门拦死。
+        Set<String> aliases = stmt instanceof PlainSelect ps ? selectAliases(ps) : Set.of();
         Set<String> columns = extractColumns(stmt);
         for (String c : columns) {
+            if (aliases.contains(c)) {
+                continue;
+            }
             if (!cache.fields().contains(c)) {
                 return ValidationResult.fail("SQL 引用了白名单外的字段：" + c);
             }
         }
 
         return ValidationResult.ok(sql);
+    }
+
+    /** SELECT 项的别名集合（别名由生成器产生，非用户可控，不需要再过字段白名单） */
+    private Set<String> selectAliases(PlainSelect ps) {
+        Set<String> aliases = new HashSet<>();
+        for (SelectItem<?> item : ps.getSelectItems()) {
+            if (item.getAlias() != null && item.getAlias().getName() != null) {
+                aliases.add(item.getAlias().getName());
+            }
+        }
+        return aliases;
     }
 
     /** 提取 SQL 里出现的所有列名（SELECT 项 / WHERE / GROUP BY / ORDER BY / HAVING） */

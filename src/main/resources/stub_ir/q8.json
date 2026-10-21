@@ -4,14 +4,24 @@
     "question": "10月19日销量排名前三的商品是哪些",
     "metrics": [],
     "dimensions": [
-      { "field": "product_name" }
+      {
+        "field": "product_name"
+      }
     ],
     "filters": [
-      { "field": "dt", "op": "EQ", "value": "2026-10-19" }
+      {
+        "field": "dt",
+        "op": "EQ",
+        "value": "2026-10-19"
+      }
     ],
     "orderBy": [
-      { "field": "sale_cnt", "direction": "desc" }
+      {
+        "field": "sale_cnt",
+        "direction": "desc"
+      }
     ],
-    "limit": 3
+    "limit": 3,
+    "selectMode": "DETAIL"
   }
 }

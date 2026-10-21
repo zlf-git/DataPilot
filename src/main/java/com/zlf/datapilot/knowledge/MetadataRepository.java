@@ -1,5 +1,6 @@
 package com.zlf.datapilot.knowledge;
 
+import com.zlf.datapilot.knowledge.model.DimensionDef;
 import com.zlf.datapilot.knowledge.model.FewShotExample;
 import com.zlf.datapilot.knowledge.model.FieldMetadata;
 import com.zlf.datapilot.knowledge.model.GateConfig;
@@ -93,6 +94,17 @@ public class MetadataRepository {
         return g;
     };
 
+    private static final RowMapper<DimensionDef> DIMENSION_MAPPER = (rs, i) -> {
+        DimensionDef d = new DimensionDef();
+        d.setId(rs.getLong("id"));
+        d.setDimName(rs.getString("dim_name"));
+        d.setFieldName(rs.getString("field_name"));
+        d.setTableName(rs.getString("table_name"));
+        d.setDimType(rs.getString("dim_type"));
+        d.setEnumValues(rs.getString("enum_values"));
+        return d;
+    };
+
     private static final String METRIC_COLUMNS =
             "id, metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status";
 
@@ -137,6 +149,13 @@ public class MetadataRepository {
                 "SELECT " + METRIC_COLUMNS + " FROM metric_def WHERE metric_name = ?",
                 METRIC_MAPPER, metricName);
         return list.isEmpty() ? null : list.get(0);
+    }
+
+    /** 维度字典全量（DETAIL 模式 field→table 反查用） */
+    public List<DimensionDef> listDimensions() {
+        return jdbc.query(
+                "SELECT id, dim_name, field_name, table_name, dim_type, enum_values FROM dimension_def",
+                DIMENSION_MAPPER);
     }
 
     public List<TermDict> listTerms() {

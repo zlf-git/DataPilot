@@ -3,6 +3,7 @@ package com.zlf.datapilot.knowledge;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.zlf.datapilot.event.MetadataChangedEvent;
+import com.zlf.datapilot.knowledge.model.DimensionDef;
 import com.zlf.datapilot.knowledge.model.FieldMetadata;
 import com.zlf.datapilot.knowledge.model.GateConfig;
 import com.zlf.datapilot.knowledge.model.MetricDef;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -73,6 +75,14 @@ public class OntologyCache {
         return v == null ? defaultValue : v;
     }
 
+    /**
+     * 维度字典索引：field_name → 候选表集合（Ticket 03 DETAIL 选表反查用）。
+     * 同一字段可能存在于多张表（如 dt 在 4 张 ADS 表都有），所以是集合而非单值。
+     */
+    public Map<String, Set<String>> dimensionTables() {
+        return snapshot().dimensionTables;
+    }
+
     /** 元数据变更（PUT 指标/闸门参数）→ 立即失效缓存，下次访问重新加载 */
     @EventListener
     public void onMetadataChanged(MetadataChangedEvent event) {
@@ -122,7 +132,17 @@ public class OntologyCache {
                 }
             }
 
-            return new Snapshot(tables, fieldNames, metricIds, metricTables, tableFields, gateThresholds);
+            Map<String, Set<String>> dimensionTables = new HashMap<>();
+            for (DimensionDef d : repo.listDimensions()) {
+                if (d.getFieldName() != null && d.getTableName() != null) {
+                    dimensionTables
+                            .computeIfAbsent(d.getFieldName(), k -> new HashSet<>())
+                            .add(d.getTableName());
+                }
+            }
+
+            return new Snapshot(tables, fieldNames, metricIds, metricTables, tableFields,
+                    gateThresholds, dimensionTables);
         } catch (DataAccessException e) {
             log.warn("白名单加载失败，返回空快照（fail-closed 拒绝一切）：{}", e.getMessage());
             return Snapshot.empty();
@@ -136,10 +156,11 @@ public class OntologyCache {
             Set<String> metricIds,
             Map<String, String> metricTables,
             Set<String> tableFields,
-            Map<String, Integer> gateThresholds) {
+            Map<String, Integer> gateThresholds,
+            Map<String, Set<String>> dimensionTables) {
 
         static Snapshot empty() {
-            return new Snapshot(Set.of(), Set.of(), Set.of(), Map.of(), Set.of(), Map.of());
+            return new Snapshot(Set.of(), Set.of(), Set.of(), Map.of(), Set.of(), Map.of(), Map.of());
         }
     }
 }

@@ -158,3 +158,19 @@ public record OrderBy(
 - **F-03 模板**：Prompt 模板要求 LLM 按本 Schema 输出 JSON，并配 Structured Output 强制约束。
 - **F-04 闸门**：存在性/权限/代价三道闸门直接在 IR 上校验。
 - **F-05 执行**：执行器把 IR 转成受控 SQL（参数化绑定失效场景下靠白名单 + 只读账号兜底），走 StarRocks 只读账号执行。
+
+---
+
+## 7. Ticket 03 新增字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `selectMode` | `AGG` \| `DETAIL` | 否（空时按 metrics 推断） | AGG=聚合（metrics 必填，dimensions 非空即 GROUP BY）；DETAIL=明细（metrics 必须为空，dimensions≥1，生成 SELECT DISTINCT） |
+| `ratio` | `{numerator, denominator}` | 否 | 占比语义声明，分子/分母各是一个 metricId。**让「各渠道GMV」与「各渠道GMV占比」在 IR 层可区分**；Ticket 03 遇到即显式拒绝（占比计算归 05） |
+
+补充契约：
+
+1. `orderBy.field` 取值域 = **metricId ∪ 字段名**。先按 metricId 解析成 SELECT 别名（`ORDER BY gmv_channel DESC`），解析不到再当字段名；两者都不在允许集（AGG=分组维度∪指标别名，DETAIL=DISTINCT 列）时显式报错。
+2. `limit` 为空时由生成器注入 `gate_config.max_rows`（默认 1000），不是无限返回。
+3. DETAIL 的表由 `dimension_def` 的 field→table 反查：多个维度/过滤字段取候选表交集，交集为空报「没有共同所属的表」，多于一张报「候选表 [...]，请补充更具体的维度」——**不猜表**。
+4. `FilterOp` 只保留 `EQ/IN/LIKE/GT/GE/LT/LE`，BETWEEN 已删（闭区间与 04 的半开区间冲突）。参数个数：EQ/GT/GE/LT/LE 各 1 个，IN 按元素数展开，LIKE 绑 `%value%`。

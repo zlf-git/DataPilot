@@ -3,14 +3,22 @@
   "ir": {
     "question": "近7天GMV最高的渠道是哪个",
     "metrics": [
-      { "metricId": "gmv_channel" }
+      {
+        "metricId": "gmv_channel"
+      }
     ],
     "dimensions": [
-      { "field": "channel_name" }
+      {
+        "field": "channel_name"
+      }
     ],
     "orderBy": [
-      { "field": "gmv_channel", "direction": "desc" }
+      {
+        "field": "gmv_channel",
+        "direction": "desc"
+      }
     ],
-    "limit": 1
+    "limit": 1,
+    "selectMode": "AGG"
   }
 }

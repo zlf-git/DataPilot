@@ -3,11 +3,22 @@
   "ir": {
     "question": "10月19日华北地区的订单量是多少",
     "metrics": [
-      { "metricId": "order_cnt_region" }
+      {
+        "metricId": "order_cnt_region"
+      }
     ],
     "filters": [
-      { "field": "dt", "op": "EQ", "value": "2026-10-19" },
-      { "field": "region", "op": "EQ", "value": "华北" }
-    ]
+      {
+        "field": "dt",
+        "op": "EQ",
+        "value": "2026-10-19"
+      },
+      {
+        "field": "region",
+        "op": "EQ",
+        "value": "华北"
+      }
+    ],
+    "selectMode": "AGG"
   }
 }

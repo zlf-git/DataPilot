@@ -4,10 +4,17 @@
     "question": "华东地区有哪些省份",
     "metrics": [],
     "dimensions": [
-      { "field": "province_name" }
+      {
+        "field": "province_name"
+      }
     ],
     "filters": [
-      { "field": "region", "op": "EQ", "value": "华东" }
-    ]
+      {
+        "field": "region",
+        "op": "EQ",
+        "value": "华东"
+      }
+    ],
+    "selectMode": "DETAIL"
   }
 }

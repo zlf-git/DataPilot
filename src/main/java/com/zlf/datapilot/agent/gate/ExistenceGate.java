@@ -95,6 +95,15 @@ public class ExistenceGate implements Gate {
             }
         }
 
+        // 占比语义的分子/分母也必须是真实指标（Ticket 03 引入；计算由 05 落地）
+        if (ir.getRatio() != null) {
+            for (String mid : new String[]{ir.getRatio().getNumerator(), ir.getRatio().getDenominator()}) {
+                if (mid == null || !cache.metricIds().contains(mid)) {
+                    return GateResult.reject("占比分子/分母指标不存在或超出可查询范围：" + mid);
+                }
+            }
+        }
+
         return GateResult.ok();
     }
 }

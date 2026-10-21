@@ -3,13 +3,26 @@
   "ir": {
     "question": "10月19日各渠道GMV占当天总GMV的比例分别是多少",
     "metrics": [
-      { "metricId": "gmv_channel" }
+      {
+        "metricId": "gmv_channel"
+      }
     ],
     "dimensions": [
-      { "field": "channel_name" }
+      {
+        "field": "channel_name"
+      }
     ],
     "filters": [
-      { "field": "dt", "op": "EQ", "value": "2026-10-19" }
-    ]
+      {
+        "field": "dt",
+        "op": "EQ",
+        "value": "2026-10-19"
+      }
+    ],
+    "selectMode": "AGG",
+    "ratio": {
+      "numerator": "gmv_channel",
+      "denominator": "gmv_total"
+    }
   }
 }
