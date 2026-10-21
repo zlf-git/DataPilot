@@ -65,6 +65,14 @@
 
 ## 修订记录
 
+### v2.4（Ticket 05 落地后回填）
+
+- 05 口径裁定：`pay_conversion_rate` = `SUM(paid_order_cnt)/SUM(visit_uv)`（与 ADS 表内既有列同口径 0.1/0.1/0.075），**取代 v2.3 写的 `SUM(paid_order_cnt)/SUM(order_cnt)`**——后者与 `pay_rate`（订单→支付）口径重复，且与评测集 Q6 期望值不符
+- 05 新增列 `denominator_table` / `denominator_sql`（迁移脚本 `deploy/migrate/V05_metric_def_denominator.sql`），指标 11 → 13
+- IR 的 `ratio` 字段停用：占比统一走 `metric_type=composite` 指标，生成器遇到 `ratio` 显式拒绝（同一语义不留两套执行路径）
+- 复合指标列别名统一取 metricId（不写死 `ratio`），Q6/Q9/Q15 同一规则
+- 顺带堵 QA-03 P1-1（空白问题返回 Q1 数据）、P1-2（跨表维度穿到 DB + 异常原文外泄）、P2-6（IR_Schema §2 定义与代码不一致）
+
 ### v2.3（三次复审，P0×8 + P1×11 已落）
 
 - 01：stub_ir 挪 `src/main/resources/stub_ir/`（main 非 test）；抽象层钉死（LlmClient 薄封装 + @ConditionalOnProperty 的 StubLlmClient，08 工厂只产出真实 provider）；定义 AskResponse 契约；StubLlmClient 返回固定 usage 保 cost>0

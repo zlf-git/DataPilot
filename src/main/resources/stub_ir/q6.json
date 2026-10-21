@@ -23,6 +23,10 @@
       {
         "field": "pay_conversion_rate",
         "direction": "desc"
+      },
+      {
+        "field": "channel_name",
+        "direction": "asc"
       }
     ],
     "selectMode": "AGG"

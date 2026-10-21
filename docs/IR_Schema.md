@@ -24,28 +24,32 @@
 
 ## 2. IR 顶层结构
 
+> 与代码 `com.zlf.datapilot.ir.QueryIr` 逐字段对齐（Ticket 03/04/05 回填；此前 §2 只写了 01 期的 6 个字段，与末尾契约表打架）。
+
 ```java
-public record QueryIr(
-    String question,              // 原始自然语言，仅审计/日志用，不进 SQL
-    List<MetricRef> metrics,      // 指标（≥1，必填）
-    List<DimensionRef> dimensions,// 分组维度（可空）
-    List<Filter> filters,         // 筛选条件（可空）
-    List<OrderBy> orderBy,        // 排序（可空）
-    Integer limit                 // TopN（可空，服务端上限 1000）
-) {}
+public class QueryIr {
+    String question;              // 原始自然语言，仅审计/日志用，不进 SQL
+    SelectMode selectMode;        // AGG（聚合，metrics 必填）/ DETAIL（明细 DISTINCT，metrics 必须为空）；空时按 metrics 推断
+    List<MetricRef> metrics;      // 指标（AGG 必填；DETAIL 必须为空）
+    List<DimensionRef> dimensions;// 维度（AGG 走 GROUP BY；DETAIL 是 SELECT DISTINCT 的列，≥1）
+    List<Filter> filters;         // 筛选条件（可空，value 全部参数化绑定）
+    List<OrderBy> orderBy;        // 排序（可空，field 可为 metricId 别名或字段名）
+    Integer limit;                // TopN（可空，空时注入 gate_config.max_rows）
+    RatioRef ratio;               // 【已停用】Ticket 05 起占比走 composite 指标，生成器遇到即显式拒绝
+    TimeRange timeRange;          // 相对时间窗口（Ticket 04），展开半开区间 dt > ? AND dt <= ?
+}
 ```
 
 ### 2.1 MetricRef（指标引用）
 
 ```java
-public record MetricRef(
-    String metricId,   // 指标 ID，必须落 Ontology 指标白名单（metric_def.metric_id）
-    String table       // 指标所在表，必须落表白名单
-) {}
+public class MetricRef {
+    String metricId;   // 指标 ID，必须落 Ontology 指标白名单（metric_def.metric_id）
+}
 ```
 
 - `metricId` 命中 `metric_def` 后，口径 SQL（`metric_sql`）与可用维度（`dimensions`）由服务端派生，**不信任 LLM 传入的聚合/字段**。
-- 未命中指标白名单时回退字段层：`MetricRef` 退化为 `{ field, agg, table }`，`field` 仍必须落字段白名单。
+- 指标未命中白名单 → 存在性闸门直接拒绝。**不做字段层回退**（Ticket 05 拍板：回退会弱化「Ontology 白名单」卖点，Q8 已由 `sale_cnt_product` 指标解决）。
 
 ### 2.2 DimensionRef（维度引用）
 
@@ -80,49 +84,68 @@ public record OrderBy(
 
 ## 3. IR JSON 示例
 
-### 示例一（对应评测集 Q6：单表分组 + 排序 + 筛选）
+### 示例一（对应评测集 Q6：单表分组 + 复合指标 + 排序 + 筛选）
 
 问题：「10月19日各渠道的支付转化率分别是多少？按从高到低排序」
 
 ```json
 {
   "question": "10月19日各渠道的支付转化率分别是多少？按从高到低排序",
+  "selectMode": "AGG",
   "metrics": [
-    { "metricId": "支付转化率", "table": "ads_channel_conversion_di" }
+    { "metricId": "pay_conversion_rate" }
   ],
   "dimensions": [
-    { "field": "channel_name", "table": "ads_channel_conversion_di" }
+    { "field": "channel_name" }
   ],
   "filters": [
-    { "field": "dt", "table": "ads_channel_conversion_di", "op": "=", "value": "2026-10-19" }
+    { "field": "dt", "op": "EQ", "value": "2026-10-19" }
   ],
   "orderBy": [
-    { "field": "pay_conversion_rate", "direction": "DESC" }
+    { "field": "pay_conversion_rate", "direction": "desc" },
+    { "field": "channel_name", "direction": "asc" }
   ],
   "limit": null
 }
 ```
 
-### 示例二（对应评测集 Q15：跨表关联 + 占比）
+### 示例二（对应评测集 Q15：跨表占比，走 composite 指标）
 
 问题：「10月19日各渠道GMV占当天总GMV的比例分别是多少？」
 
 ```json
 {
   "question": "10月19日各渠道GMV占当天总GMV的比例分别是多少？",
+  "selectMode": "AGG",
   "metrics": [
-    { "metricId": "GMV（渠道/地域）", "table": "ads_channel_conversion_di" },
-    { "metricId": "GMV（全局）", "table": "ads_trade_overview_di" }
+    { "metricId": "gmv_channel_ratio" }
   ],
   "dimensions": [
-    { "field": "channel_name", "table": "ads_channel_conversion_di" }
+    { "field": "channel_name" }
   ],
   "filters": [
-    { "field": "dt", "table": "ads_channel_conversion_di", "op": "=", "value": "2026-10-19" },
-    { "field": "dt", "table": "ads_trade_overview_di", "op": "=", "value": "2026-10-19" }
+    { "field": "dt", "op": "EQ", "value": "2026-10-19" }
   ],
-  "orderBy": [],
+  "orderBy": [
+    { "field": "gmv_channel_ratio", "direction": "desc" }
+  ],
   "limit": null
+}
+```
+
+> 跨表信息（分母表 `ads_trade_overview_di`、分母口径 `SUM(total_gmv)`）**不进 IR**，全部来自 `metric_def`。IR 只声明「用哪个指标」，表与口径都由服务端派生——这是白名单约束生成空间的核心。
+
+### 示例三（对应评测集 Q14：时间窗口 + TopN）
+
+```json
+{
+  "question": "近7天里总GMV最高的是哪一天？",
+  "selectMode": "AGG",
+  "metrics": [ { "metricId": "gmv_total" } ],
+  "dimensions": [ { "field": "dt" } ],
+  "orderBy": [ { "field": "gmv_total", "direction": "desc" } ],
+  "limit": 1,
+  "timeRange": { "relativeWindow": "LAST_N_DAYS", "days": 7 }
 }
 ```
 
@@ -132,11 +155,11 @@ public record OrderBy(
 
 | 校验点 | 规则 | 违例处理 |
 |---|---|---|
-| 表名 | 每个 `table` 必须落表白名单（4 张 ADS） | 拒绝执行 |
-| 字段名 | 每个 `field` 必须落字段白名单 | 拒绝执行 |
-| 指标名 | 每个 `metricId` 必须落指标白名单 `metric_def` | 回退字段层或拒绝 |
-| 维度属性 | `DimensionRef.field` 必须标记为「维度」属性 | 拒绝执行 |
-| 聚合 | `agg` 由服务端按指标口径派生，不采信 LLM | 覆盖 LLM 传值 |
+| 表名 | IR 不携带表，表由 `metric_def.table_name` / `dimension_def` 派生，且必须在表白名单（4 张 ADS） | 拒绝执行 |
+| 字段名 | 维度/过滤/排序字段必须落字段白名单，**且必须属于该指标的表**（`table.field` 复合键） | 拒绝执行 |
+| 指标名 | 每个 `metricId` 必须落指标白名单 `metric_def` | 直接拒绝（**不回退字段层**，Ticket 05 拍板） |
+| 维度属性 | 维度字段必须能在 `dimension_def` 反查到表 | 拒绝执行 |
+| 聚合 | 聚合由服务端按指标口径派生，不采信 LLM | 覆盖 LLM 传值 |
 | 身份 | 不进 IR，走传输层 token 绑定 | — |
 
 ---
@@ -145,11 +168,11 @@ public record OrderBy(
 
 | 闸门 | 作用层 | 说明 |
 |---|---|---|
-| ① 语法闸门 | SQL 层 | IR→SQL 后，JSqlParser 解析校验语法 |
-| ② 代价闸门 | IR 层 | 预估复杂度 = 指标数 × 维度数 × 表 join 数，超阈值拒绝 |
-| ③ 存在性闸门 | IR 层 | 表/字段/指标落白名单校验（见上表） |
-| ④ 权限闸门 | IR 层 | 只读表白名单 + 只读账号执行 |
-| ⑤ 结果自检 | 结果层 | 执行后空结果/异常值自检 |
+| ① 存在性 | IR 层 | 指标/字段/（占比）分母表落白名单；同一指标的表归属校验见 §4 |
+| ② 权限 | IR 层 | 主表与占比分母表都必须在只读表白名单，执行走只读账号 |
+| ③ 代价 | IR 层 | 预估复杂度 = 指标数 × 维度数 × 表 join 数，超阈值拒绝 |
+| ④ 语法 | SQL 层 | IR→SQL 后，JSqlParser 解析校验语法 + 表/字段二次比对 |
+| ⑤ 结果自检 | 结果层 | 执行后空结果/超长结果包装（不拒绝，给提示） |
 
 ---
 
@@ -166,7 +189,7 @@ public record OrderBy(
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `selectMode` | `AGG` \| `DETAIL` | 否（空时按 metrics 推断） | AGG=聚合（metrics 必填，dimensions 非空即 GROUP BY）；DETAIL=明细（metrics 必须为空，dimensions≥1，生成 SELECT DISTINCT） |
-| `ratio` | `{numerator, denominator}` | 否 | 占比语义声明，分子/分母各是一个 metricId。**让「各渠道GMV」与「各渠道GMV占比」在 IR 层可区分**；Ticket 03 遇到即显式拒绝（占比计算归 05） |
+| `ratio` | `{numerator, denominator}` | 否 | **已停用（Ticket 05）**：占比改由 `metric_type=composite` 的指标承载，生成器遇到 `ratio` 直接拒绝并提示改用指标——同一语义不允许两套执行路径 |
 
 补充契约：
 
@@ -197,3 +220,36 @@ WHERE dt > ? AND dt <= ?        -- 参数：['2026-10-12', '2026-10-19']
 3. **锚点失败即拒绝**：表无 `dt` 列 / `dt` 全空 / 引擎不可用 → 「无法确定时间锚点」显式报错，**绝不回退 now()**（回退是无声的口径错误）。
 4. **与 dt 过滤互斥**：IR 同时给 `timeRange` 和 `field=dt` 的 filter 时显式拒绝——两套时间约束并存会让「近 7 天」与「某一天」互相打架。
 5. 缓存：`TimeAnchorProvider`（Caffeine TTL 60s 按表缓存），`RecallStep` 预热一次，一次问数只查一次库。
+
+---
+
+## 9. Ticket 05：复合指标（composite）与跨表占比
+
+IR 本身<b>不新增字段</b>：复合指标由 `metric_def` 声明，IR 只写 `metricId`。全部口径信息留在元数据层，LLM 无从拼出分子分母。
+
+| metric_def 列 | 含义 |
+|---|---|
+| `metric_type` | `simple` / `composite` / `uv` |
+| `metric_sql` | 同表比值时写 `A/B`；跨表比值时只写分子（如 `SUM(gmv)`） |
+| `denominator_table` | 跨表占比的分母表；空 = 同表比值 |
+| `denominator_sql` | 分母口径，**必须自带聚合**（如 `SUM(total_gmv)`） |
+
+### 9.1 生成契约
+
+```sql
+-- 同表比值（pay_rate / pay_conversion_rate）：ROUND 只保留一列
+SELECT dims..., ROUND(SUM(paid_order_cnt) / NULLIF(SUM(visit_uv), 0), 4) AS pay_conversion_rate
+FROM ads_channel_conversion_di WHERE dt = ? GROUP BY dims
+
+-- 跨表占比（gmv_channel_ratio）：分母走标量子查询，不生成 JOIN
+SELECT channel_name, ROUND(SUM(gmv) / NULLIF((SELECT SUM(total_gmv) FROM ads_trade_overview_di WHERE dt = ?), 0), 4) AS gmv_channel_ratio
+FROM ads_channel_conversion_di WHERE dt = ? GROUP BY channel_name
+```
+
+1. **为什么跨表用标量子查询而不是 JOIN**：Q15 是「渠道表 / 总览表」，JOIN 要求两表按 dt 对齐，分母侧一旦一对多就会放大分子行数；标量子查询是标量常量，不改变分组粒度。两种写法结果等价，对拍只比结果不比 SQL 文本。
+2. **分母必须带聚合**（审计 P1#14）：漏了 `SUM` 的标量子查询会返回多行，SQL 直接报错。
+3. **参数顺序**（审计 P1#14）：子查询文本在主查询 WHERE 之前，所以**分母参数在前、主查询参数在后**，由生成器按「分母 → 主查询」顺序压参数。实测 Q15 params = `['2026-10-19', '2026-10-19']`。
+4. **分母只继承时间条件**（`timeRange` 或 `dt` 过滤）。非时间过滤叠加在跨表占比上时**显式拒绝**：把渠道过滤推到分母会变成「自己占自己」恒等于 1，而这个口径没有唯一答案，不猜也不静默丢。
+5. **除零保护**：分母套 `NULLIF(...,0)`，分母为 0 得 NULL（占比未知），不是除零异常把链路打断。
+6. **列别名取 metricId**（`gmv_channel_ratio`），不写死 `ratio`：Q6/Q9 同为 composite，别名规则必须统一，否则同一机制出现两套列名，前端/报告无法按 metricId 定位列。
+7. **多指标仍不支持**：一条 IR 只允许一个指标（`metrics.size()>1` 显式拒绝）。复合指标的分子分母来自元数据，不是「IR 里的两个指标」。

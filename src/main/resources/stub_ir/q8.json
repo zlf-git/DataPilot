@@ -2,7 +2,11 @@
   "question": "10月19日销量排名前三的商品是哪些",
   "ir": {
     "question": "10月19日销量排名前三的商品是哪些",
-    "metrics": [],
+    "metrics": [
+      {
+        "metricId": "sale_cnt_product"
+      }
+    ],
     "dimensions": [
       {
         "field": "product_name"
@@ -17,11 +21,11 @@
     ],
     "orderBy": [
       {
-        "field": "sale_cnt",
+        "field": "sale_cnt_product",
         "direction": "desc"
       }
     ],
     "limit": 3,
-    "selectMode": "DETAIL"
+    "selectMode": "AGG"
   }
 }

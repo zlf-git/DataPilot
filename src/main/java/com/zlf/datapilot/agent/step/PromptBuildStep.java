@@ -61,7 +61,8 @@ public class PromptBuildStep implements AgentStep {
                   也不要在 filters 里再写 dt 条件（两者只能二选一）
                 - orderBy：{field, direction}，field 可写 metricId（按聚合值排序）或维度字段名
                 - limit：只要 TopN 时才给整数，其余留空
-                - ratio：只有「A 占 B 的比例」这类占比问题才填 {numerator, denominator}，否则留空
+                - ratio：**已停用，不要填**。「A 占 B 的比例」这类问题请直接选指标清单里带「占比」的复合指标
+                  （如 gmv_channel_ratio），分子分母与跨表口径都在指标定义里，你不要自己拆
 
                 ## 日期归一化（必须遵守）
                 1. 只说「10月19日」没写年份 → 补成今年 %d，输出 yyyy-MM-dd，放进 filters 的 dt EQ 条件
@@ -80,7 +81,7 @@ public class PromptBuildStep implements AgentStep {
                 for (MetricDef m : meta.getMetrics()) {
                     user.append("- ").append(m.getMetricId())
                             .append("(").append(m.getMetricName()).append(")")
-                            .append(" 口径=").append(m.getMetricSql())
+                            .append(" 口径=").append(renderCaliber(m))
                             .append(" 表=").append(m.getTableName()).append("\n");
                 }
             }
@@ -97,5 +98,21 @@ public class PromptBuildStep implements AgentStep {
             }
         }
         return user.toString();
+    }
+
+    /**
+     * 渲染指标口径（Ticket 05）：跨表占比指标的 metric_sql 只有分子（如 SUM(gmv)），
+     * 直接平铺会让 LLM 以为它就是普通渠道 GMV，从而在「占比」问题上选错指标。
+     * 这里把分母表与分母口径一并写出来，让「占比」语义在指标清单里可见。
+     */
+    private String renderCaliber(MetricDef m) {
+        String sql = m.getMetricSql();
+        String denSql = m.getDenominatorSql();
+        if (denSql == null || denSql.isBlank()) {
+            return sql;
+        }
+        String denTable = m.getDenominatorTable();
+        String where = (denTable == null || denTable.isBlank()) ? "" : "（同时间 " + denTable + "）";
+        return sql + " ÷ " + denSql + where + " [复合占比]";
     }
 }

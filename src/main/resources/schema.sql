@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS metric_def (
     metric_sql   VARCHAR(500) COMMENT '口径SQL，如 SUM(total_gmv)',
     metric_type  VARCHAR(16)  COMMENT '指标类型：simple简单/composite复合/uv去重',
     table_name   VARCHAR(128) COMMENT '主关联表（多表走 metric_table）',
+    denominator_table VARCHAR(128) COMMENT '跨表占比的分母表（Ticket 05）：空=同表比值，填表名=标量子查询取分母',
+    denominator_sql   VARCHAR(500) COMMENT '分母口径SQL，如 SUM(total_gmv)（Ticket 05，必须自带聚合）',
     dimensions   VARCHAR(255) COMMENT '可用维度字段名，逗号分隔，如 dt,channel_name',
     owner        VARCHAR(64)  COMMENT '指标负责人',
     status       VARCHAR(16)  DEFAULT '启用' COMMENT '启用/停用',

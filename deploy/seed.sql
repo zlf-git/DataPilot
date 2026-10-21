@@ -51,20 +51,37 @@ INSERT IGNORE INTO field_metadata (table_name, field_name, field_type, field_com
 ('ads_product_sales_rank_di','sale_cnt','bigint','销量/销售件数/售卖数量','metric',NULL),
 ('ads_product_sales_rank_di','sale_amount','decimal','销售额/销售金额/成交金额（含未支付明细）','metric',NULL);
 
--- 3. 指标口径（11 指标，修正后口径）
+-- 3. 指标口径（13 指标，修正后口径）
+-- Ticket 05：metric_type=composite 的两种写法
+--   ① 同表比值：metric_sql 直接写 A/B（如 pay_rate）→ 生成器输出 ROUND(A/B,4)
+--   ② 跨表比值：metric_sql 只写分子，分母填 denominator_table + denominator_sql
+--      （如 gmv_channel_ratio：分子=渠道表 SUM(gmv)，分母=总览表 SUM(total_gmv)）
 INSERT IGNORE INTO metric_def
-(metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status) VALUES
-('gmv_total',           '总GMV',       '总成交额,总交易额,总销售额', '电商部',   'SUM(total_gmv)',             'simple',    'ads_trade_overview_di',    'dt', '数据开发', '启用'),
-('gmv_channel',         '渠道GMV',     '渠道成交额,渠道交易额',     '渠道运营部','SUM(gmv)',                   'simple',    'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用'),
-('gmv_region',          '地域GMV',     '区域成交额,省份成交额',     '电商部',   'SUM(gmv)',                   'simple',    'ads_region_gmv_di',       'dt,province_name,region', '数据开发', '启用'),
-('sale_amount_product', '商品销售额',   '商品成交额,商品销售金额',   '商品部',   'SUM(sale_amount)',           'simple',    'ads_product_sales_rank_di','dt,product_name,category_name', '数据开发', '启用'),
-('order_cnt_total',     '总订单数',     '总订单量',                 '电商部',   'SUM(total_order_cnt)',       'simple',    'ads_trade_overview_di',    'dt', '数据开发', '启用'),
-('order_cnt_channel',   '渠道订单数',   '渠道订单量,渠道下单数',     '渠道运营部','SUM(order_cnt)',             'simple',    'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用'),
-('order_cnt_region',    '地域订单数',   '地域订单量,省份订单量',     '电商部',   'SUM(order_cnt)',             'simple',    'ads_region_gmv_di',       'dt,province_name,region', '数据开发', '启用'),
-('paid_order_cnt',      '支付订单数',   '已支付订单,成交订单',       '电商部',   'SUM(paid_order_cnt)',        'simple',    'ads_trade_overview_di',    'dt', '数据开发', '启用'),
-('paid_user_cnt',       '支付用户数',   '付费用户数,成交用户数',     '电商部',   'SUM(paid_user_cnt)',         'uv',        'ads_trade_overview_di',    'dt', '数据开发', '启用'),
-('pay_rate',            '支付率',       '下单支付率,订单支付率',     '电商部',   'SUM(paid_order_cnt)/SUM(total_order_cnt)', 'composite', 'ads_trade_overview_di', 'dt', '数据开发', '启用'),
-('pay_conversion_rate', '支付转化率',   '下单转支付率,成交转化率',   '渠道运营部','SUM(paid_order_cnt)/SUM(order_cnt)', 'composite', 'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用');
+(metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status,
+ denominator_table, denominator_sql) VALUES
+('gmv_total',           '总GMV',       '总成交额,总交易额,总销售额', '电商部',   'SUM(total_gmv)',             'simple',    'ads_trade_overview_di',    'dt', '数据开发', '启用', NULL, NULL),
+('gmv_channel',         '渠道GMV',     '渠道成交额,渠道交易额',     '渠道运营部','SUM(gmv)',                   'simple',    'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用', NULL, NULL),
+('gmv_region',          '地域GMV',     '区域成交额,省份成交额',     '电商部',   'SUM(gmv)',                   'simple',    'ads_region_gmv_di',       'dt,province_name,region', '数据开发', '启用', NULL, NULL),
+('sale_amount_product', '商品销售额',   '商品成交额,商品销售金额',   '商品部',   'SUM(sale_amount)',           'simple',    'ads_product_sales_rank_di','dt,product_name,category_name', '数据开发', '启用', NULL, NULL),
+('sale_cnt_product',    '商品销量',     '销量,销售件数,售卖数量,卖了多少件', '商品部', 'SUM(sale_cnt)',            'simple',    'ads_product_sales_rank_di','dt,product_name,category_name', '数据开发', '启用', NULL, NULL),
+('order_cnt_total',     '总订单数',     '总订单量',                 '电商部',   'SUM(total_order_cnt)',       'simple',    'ads_trade_overview_di',    'dt', '数据开发', '启用', NULL, NULL),
+('order_cnt_channel',   '渠道订单数',   '渠道订单量,渠道下单数',     '渠道运营部','SUM(order_cnt)',             'simple',    'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用', NULL, NULL),
+('order_cnt_region',    '地域订单数',   '地域订单量,省份订单量',     '电商部',   'SUM(order_cnt)',             'simple',    'ads_region_gmv_di',       'dt,province_name,region', '数据开发', '启用', NULL, NULL),
+('paid_order_cnt',      '支付订单数',   '已支付订单,成交订单',       '电商部',   'SUM(paid_order_cnt)',        'simple',    'ads_trade_overview_di',    'dt', '数据开发', '启用', NULL, NULL),
+('paid_user_cnt',       '支付用户数',   '付费用户数,成交用户数',     '电商部',   'SUM(paid_user_cnt)',         'uv',        'ads_trade_overview_di',    'dt', '数据开发', '启用', NULL, NULL),
+('pay_rate',            '支付率',       '下单支付率,订单支付率',     '电商部',   'SUM(paid_order_cnt)/SUM(total_order_cnt)', 'composite', 'ads_trade_overview_di', 'dt', '数据开发', '启用', NULL, NULL),
+('pay_conversion_rate', '支付转化率',   '下单转支付率,成交转化率',   '渠道运营部','SUM(paid_order_cnt)/SUM(visit_uv)', 'composite', 'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用', NULL, NULL),
+('gmv_channel_ratio',   '渠道GMV占比',  '渠道占比,GMV占比,渠道GMV占总GMV比例', '渠道运营部','SUM(gmv)',          'composite', 'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用',
+ 'ads_trade_overview_di', 'SUM(total_gmv)');
+
+-- 3b. 口径修正（Ticket 05）：INSERT IGNORE 不会更新已存在的行，用显式 UPDATE 保证 seed 可重复执行且口径一致
+--   ① pay_conversion_rate 由「支付订单/订单数」改为「支付订单/访客数」：与 ADS 表内既有列 pay_conversion_rate
+--      （0.1/0.1/0.075 = paid_order_cnt/visit_uv）同口径；订单→支付的比率已由 pay_rate 覆盖，两指标不重复
+UPDATE metric_def
+   SET metric_sql = 'SUM(paid_order_cnt)/SUM(visit_uv)', metric_type = 'composite',
+       denominator_table = NULL, denominator_sql = NULL
+ WHERE metric_id = 'pay_conversion_rate';
+
 
 -- 4. 指标-表关联（多表指标在此展开，供存在性闸门查「指标在哪些表可算」）
 INSERT IGNORE INTO metric_table (metric_id, table_name) VALUES
@@ -72,6 +89,7 @@ INSERT IGNORE INTO metric_table (metric_id, table_name) VALUES
 ('gmv_channel','ads_channel_conversion_di'),
 ('gmv_region','ads_region_gmv_di'),
 ('sale_amount_product','ads_product_sales_rank_di'),
+('sale_cnt_product','ads_product_sales_rank_di'),
 ('order_cnt_total','ads_trade_overview_di'),
 ('order_cnt_channel','ads_channel_conversion_di'),
 ('order_cnt_region','ads_region_gmv_di'),
@@ -81,7 +99,8 @@ INSERT IGNORE INTO metric_table (metric_id, table_name) VALUES
 ('paid_user_cnt','ads_trade_overview_di'),
 ('paid_user_cnt','ads_region_gmv_di'),
 ('pay_rate','ads_trade_overview_di'),
-('pay_conversion_rate','ads_channel_conversion_di');
+('pay_conversion_rate','ads_channel_conversion_di'),
+('gmv_channel_ratio','ads_channel_conversion_di');
 
 -- 5. 维度字典（业务维度 → 字段映射）
 -- B6：日期维度 dt 一对多——dt 在 4 张 ADS 表都有，不绑定单一表，避免含 dt 过滤的题被「维度越界」误拦

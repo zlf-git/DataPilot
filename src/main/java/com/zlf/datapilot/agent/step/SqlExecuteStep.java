@@ -4,6 +4,8 @@ import com.zlf.datapilot.agent.AgentContext;
 import com.zlf.datapilot.agent.AgentStep;
 import com.zlf.datapilot.sql.SqlCommand;
 import com.zlf.datapilot.sql.StarRocksSqlExecutor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -14,6 +16,8 @@ import java.util.Map;
  */
 @Component
 public class SqlExecuteStep implements AgentStep {
+
+    private static final Logger log = LoggerFactory.getLogger(SqlExecuteStep.class);
 
     private final StarRocksSqlExecutor executor;
 
@@ -33,8 +37,12 @@ public class SqlExecuteStep implements AgentStep {
             List<Map<String, Object>> rows = executor.query(cmd);
             ctx.setQueryResult(rows);
         } catch (Exception e) {
-            // SQL 执行失败不向上抛 500，放 errorMessage 由 AskController 透出
-            ctx.setErrorMessage("SQL 执行失败：" + brief(e));
+            // 不向上抛 500；也不把 DB 异常原文（BadSqlGrammarException + SQL 片段）透给用户（QA-03 P1-2），
+            // 细节只进服务端日志，用 traceId 关联
+            log.warn("SQL 执行失败 trace={} sql={} err={}", ctx.getTraceId(),
+                    cmd == null ? null : cmd.sql(), brief(e));
+            ctx.setErrorMessage("SQL 执行失败：数据源拒绝了这条查询（trace " + ctx.getTraceId()
+                    + "），请把问题反馈给数据开发排查");
         }
         return ctx;
     }

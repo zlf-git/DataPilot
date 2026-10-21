@@ -92,7 +92,10 @@ public class StubLlmClient implements LlmClient {
     /**
      * 从 prompt 里抽出「真实问题」：PromptBuildStep 的第一行固定是 {@code 问题：<question>}，
      * 后面才是指标清单/DDL/few-shot。取第一处「问题：」到行尾，避免 few-shot 示例问题污染匹配。
-     * 没有该标记时退回整段 prompt（兼容自定义 prompt）。
+     *
+     * <p>抽到的内容为空（空串/纯空白问题）时返回<b>空串</b>，不能回落到整段 prompt：
+     * prompt 里的 few-shot 正文就是 Q1 原题，回落等于「空白问题 → 返回 Q1 的 53042.41」，
+     * 一条看着完全正常的错数（QA-03 P1-1）。空串匹配不到任何非空 stub，自然落到「无法识别」。
      */
     private static String extractQuestion(String prompt) {
         int idx = prompt.indexOf("问题：");
@@ -102,7 +105,7 @@ public class StubLlmClient implements LlmClient {
         int start = idx + "问题：".length();
         int end = prompt.indexOf('\n', start);
         String q = end > 0 ? prompt.substring(start, end) : prompt.substring(start);
-        return q.isBlank() ? prompt : q;
+        return q.trim();
     }
 
     /**

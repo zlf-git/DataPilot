@@ -64,6 +64,8 @@ public class MetadataRepository {
         m.setDimensions(rs.getString("dimensions"));
         m.setOwner(rs.getString("owner"));
         m.setStatus(rs.getString("status"));
+        m.setDenominatorTable(rs.getString("denominator_table"));
+        m.setDenominatorSql(rs.getString("denominator_sql"));
         return m;
     };
 
@@ -106,7 +108,8 @@ public class MetadataRepository {
     };
 
     private static final String METRIC_COLUMNS =
-            "id, metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status";
+            "id, metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status, "
+                    + "denominator_table, denominator_sql";
 
     private static final String FIELD_COLUMNS =
             "id, table_name, field_name, field_type, field_comment, field_role, enum_values";
@@ -220,10 +223,11 @@ public class MetadataRepository {
             // 已存在（按 metric_id）→ 只 UPDATE 这一行，绝不用 ON DUPLICATE KEY 兜两个唯一键
             jdbc.update(
                     "UPDATE metric_def SET metric_name = ?, metric_alias = ?, department = ?, metric_sql = ?, " +
-                    "metric_type = ?, table_name = ?, dimensions = ?, owner = ?, status = ? WHERE metric_id = ?",
+                    "metric_type = ?, table_name = ?, dimensions = ?, owner = ?, status = ?, " +
+                    "denominator_table = ?, denominator_sql = ? WHERE metric_id = ?",
                     m.getMetricName(), m.getMetricAlias(), m.getDepartment(), m.getMetricSql(),
                     m.getMetricType(), m.getTableName(), m.getDimensions(), m.getOwner(), m.getStatus(),
-                    m.getMetricId());
+                    m.getDenominatorTable(), m.getDenominatorSql(), m.getMetricId());
             m.setId(existing.getId());
         } else {
             // 新增 → INSERT 并回填自增主键
@@ -231,7 +235,8 @@ public class MetadataRepository {
             jdbc.update(con -> {
                 PreparedStatement ps = con.prepareStatement(
                         "INSERT INTO metric_def (metric_id, metric_name, metric_alias, department, metric_sql, " +
-                        "metric_type, table_name, dimensions, owner, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "metric_type, table_name, dimensions, owner, status, denominator_table, denominator_sql) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         Statement.RETURN_GENERATED_KEYS);
                 ps.setString(1, m.getMetricId());
                 ps.setString(2, m.getMetricName());
@@ -243,6 +248,8 @@ public class MetadataRepository {
                 ps.setString(8, m.getDimensions());
                 ps.setString(9, m.getOwner());
                 ps.setString(10, m.getStatus());
+                ps.setString(11, m.getDenominatorTable());
+                ps.setString(12, m.getDenominatorSql());
                 return ps;
             }, keyHolder);
             Number key = keyHolder.getKey();

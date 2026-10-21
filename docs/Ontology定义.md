@@ -120,8 +120,11 @@
 | metric_name | varchar | 指标名（如「GMV」「支付率」） |
 | metric_alias | varchar | 同义词，逗号分隔（如「成交额,交易额」） |
 | department | varchar | 归属部门（如「电商部」「渠道运营部」） |
-| metric_sql | varchar | 口径 SQL（如 `SUM(gmv)`） |
-| table_name | varchar | 关联表 |
+| metric_sql | varchar | 口径 SQL。`simple`/`uv` 写单个聚合（如 `SUM(gmv)`）；`composite` 同表比值写 `A/B`（如 `SUM(paid_order_cnt)/SUM(visit_uv)`） |
+| metric_type | varchar | `simple` 简单 / `composite` 复合（比值）/ `uv` 去重（跨期不可加） |
+| table_name | varchar | 关联表（指标口径的作用表） |
+| denominator_table | varchar | **Ticket 05**：跨表占比的分母表，空 = 同表比值 |
+| denominator_sql | varchar | **Ticket 05**：分母口径，必须自带聚合（如 `SUM(total_gmv)`） |
 | dimensions | varchar | 可用维度，逗号分隔（如「渠道,日期」） |
 | owner | varchar | 指标负责人 |
 | status | varchar | 启用 / 停用 |
@@ -138,20 +141,25 @@
 
 - 召回阶段：用户问题中的业务词（GMV、支付率…）优先匹配 `metric_def.metric_alias`。
 - 命中后：套用该指标的 `metric_sql` 与 `dimensions`，LLM 只负责补 WHERE 筛选条件与排序/分组，不再自己猜口径。
-- 未命中：回退到字段层同义词 + few-shot 生成。
+- 未命中指标：显式拒绝（「指标不存在或超出可查询范围」），**不回退字段层**——回退会让「Ontology 白名单约束生成空间」这条卖点失效（Ticket 05 拍板）。缺指标就补 `metric_def`，一条 PUT 即生效。
 
-### 6.4 内置默认指标（字段层预置，业务可覆盖）
+### 6.4 内置默认指标（seed 13 条，业务可覆盖）
 
-| metric_name | metric_sql | table_name | dimensions |
+| metric_id | metric_sql | metric_type | table_name |
 |---|---|---|---|
-| GMV（全局） | `total_gmv` | ads_trade_overview_di | 日期 |
-| GMV（渠道/地域） | `SUM(gmv)` | ads_channel_conversion_di / ads_region_gmv_di | 渠道/地域、日期 |
-| 销售额（商品） | `SUM(sale_amount)` | ads_product_sales_rank_di | 商品、类目、日期 |
-| 订单量 | `SUM(order_cnt)` | channel / region / trade | 渠道/地域/日期 |
-| 支付订单数 | `SUM(paid_order_cnt)` | channel / region / trade | 渠道/地域/日期 |
-| 支付用户数 | `SUM(paid_user_cnt)` | trade / region | 地域/日期 |
-| 支付率 | `paid_order_cnt / total_order_cnt` | ads_trade_overview_di | 日期 |
-| 支付转化率 | `pay_conversion_rate` | ads_channel_conversion_di | 渠道、日期 |
+| gmv_total | `SUM(total_gmv)` | simple | ads_trade_overview_di |
+| gmv_channel | `SUM(gmv)` | simple | ads_channel_conversion_di |
+| gmv_region | `SUM(gmv)` | simple | ads_region_gmv_di |
+| sale_amount_product | `SUM(sale_amount)` | simple | ads_product_sales_rank_di |
+| sale_cnt_product | `SUM(sale_cnt)` | simple | ads_product_sales_rank_di |
+| order_cnt_total / order_cnt_channel / order_cnt_region | `SUM(total_order_cnt)` / `SUM(order_cnt)` | simple | trade / channel / region |
+| paid_order_cnt | `SUM(paid_order_cnt)` | simple | trade（另挂 channel、region） |
+| paid_user_cnt | `SUM(paid_user_cnt)` | uv | trade（另挂 region） |
+| pay_rate | `SUM(paid_order_cnt)/SUM(total_order_cnt)` | composite | ads_trade_overview_di |
+| pay_conversion_rate | `SUM(paid_order_cnt)/SUM(visit_uv)` | composite | ads_channel_conversion_di |
+| gmv_channel_ratio | `SUM(gmv)`，分母 `ads_trade_overview_di` 的 `SUM(total_gmv)` | composite | ads_channel_conversion_di |
+
+> `composite` 一律输出 `ROUND(分子/分母, 4)`；跨表分母用标量子查询，不生成 JOIN（契约见 IR_Schema.md §9）。
 
 ---
 

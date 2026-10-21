@@ -46,20 +46,27 @@
 - product_name: 机械键盘、4K显示器、人体工学椅
 
 ## 指标口径（提到指标时，套用对应口径，不要自己定义）
-- GMV（全局）= total_gmv；GMV（渠道/地域）= SUM(gmv)；销售额（商品）= SUM(sale_amount)
-- 支付率 = paid_order_cnt / total_order_cnt
-- 支付转化率 = pay_conversion_rate（渠道表）
+- GMV（全局）=SUM(total_gmv)；GMV（渠道/地域）=SUM(gmv)；销售额（商品）=SUM(sale_amount)；销量（商品）=SUM(sale_cnt)
+- 支付率 = SUM(paid_order_cnt)/SUM(total_order_cnt)（订单→支付）
+- 支付转化率 = SUM(paid_order_cnt)/SUM(visit_uv)（访客→支付，渠道表）
+- 渠道GMV占比 = 渠道 SUM(gmv) ÷ 当天 SUM(total_gmv)（跨表，已落成指标 gmv_channel_ratio）
+- 只写 metricId：口径里的表、聚合、分母都从 metric_def 派生，**不要自己写表名/表达式**
 
 ## 输出规范
 必须输出如下 JSON（不要输出任何其他内容，不要用 markdown 代码块包裹）：
 {
   "question": "原始问题",
-  "metrics": [ { "metricId": "指标ID", "table": "表名" } ],
-  "dimensions": [ { "field": "字段名", "table": "表名" } ],
-  "filters": [ { "field": "字段名", "table": "表名", "op": "=|!=|>|<|>=|<=|IN|LIKE|BETWEEN", "value": "值" } ],
-  "orderBy": [ { "field": "字段名", "direction": "ASC|DESC" } ],
-  "limit": 数字或 null
+  "selectMode": "AGG | DETAIL",
+  "metrics": [ { "metricId": "指标ID" } ],
+  "dimensions": [ { "field": "字段名" } ],
+  "filters": [ { "field": "字段名", "op": "EQ|IN|LIKE|GT|GE|LT|LE", "value": "值" } ],
+  "orderBy": [ { "field": "指标ID或字段名", "direction": "ASC|DESC" } ],
+  "limit": 数字或 null,
+  "timeRange": { "relativeWindow": "LAST_N_DAYS", "days": 7 }
 }
+
+> IR 里**不带表名**（表由 metric_def / dimension_def 派生），也**不填 `ratio`**（Ticket 05 停用，占比走复合指标）。
+> `selectMode`：AGG=要聚合值（金额/数量/比例/最高最低）；DETAIL=要清单（「有哪些」「列出」）。
 
 ## 约束规则
 1. 只能使用上述表和字段，禁止编造任何表名、字段名。
@@ -197,9 +204,13 @@ public QueryIr ask(String question) {
 运行时 prompt 里注入 `今天是 yyyy-MM-dd（年份 yyyy）`（`PromptBuildStep` 用 `Asia/Shanghai` 时区计算），并配 1 条 few-shot：
 「10月19日当天的总GMV是多少」→ `{"selectMode":"AGG","metrics":[{"metricId":"gmv_total"}],"filters":[{"field":"dt","op":"EQ","value":"2026-10-19"}]}`。
 
-### 6.3 未实现语义的显式拒绝（与 01c 失败契约一致）
+### 6.3 「占比」类问题的处理（Ticket 05 更新）
 
-Prompt 里让 LLM 照常输出 `ratio{分子,分母}` 声明占比意图，但生成器遇到 `ratio` 会**显式拒绝**（「占比计算未实现（Ticket 05）」），不会降级成普通聚合返回各渠道GMV——降级会静默出错值。
+占比问题让 LLM 输出**复合指标**的 metricId（如 `gmv_channel_ratio`），不要再输出 `ratio{分子,分母}`：
+跨表信息（分母表、分母口径）在 `metric_def` 里，IR 不带表也不会带表达式。
+
+若 LLM 仍吐出 `ratio`，生成器**显式拒绝**并提示改用复合指标（「占比语义请改用复合指标（Ticket 05）」），
+不会降级成普通聚合返回各渠道GMV——降级会静默出错值。
 
 ### 6.4 时间窗口（Ticket 04）
 

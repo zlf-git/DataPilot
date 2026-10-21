@@ -46,6 +46,11 @@ public class AuthorityGate implements Gate {
                 if (table != null && !cache.tables().contains(table)) {
                     return GateResult.reject("越权访问表：" + table);
                 }
+                // Ticket 05：跨表占比的分母表是第二个真实读取目标，与主表同等校验
+                String denTable = cache.metricDenominatorTables().get(m.getMetricId());
+                if (denTable != null && !cache.tables().contains(denTable)) {
+                    return GateResult.reject("越权访问表（占比分母）：" + denTable);
+                }
             }
         }
 

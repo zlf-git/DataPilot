@@ -44,19 +44,19 @@
         { "product_name": "机械键盘" }
       ],
       "sqlMust": ["SELECT DISTINCT", "FROM ads_product_sales_rank_di", "WHERE category_name = ?"],
-      "caliberPending": "评测集写 3 个（含人体工学椅），库内电脑外设只有 2 个（人体工学椅属办公家具）→ 06b 需修正评测集"
+      "note": "Ticket 05 已修评测集：电脑外设只有 2 个商品（人体工学椅属办公家具），docs/评测集.md 与期望表均为 2 行"
     },
     {
       "no": 6,
       "question": "10月19日各渠道的支付转化率分别是多少？按转化率从高到低排序。",
       "status": "OK",
       "rows": [
-        { "channel_name": "APP", "pay_conversion_rate": 1.0 },
-        { "channel_name": "小程序", "pay_conversion_rate": 1.0 },
-        { "channel_name": "网页", "pay_conversion_rate": 0.75 }
+        { "channel_name": "APP", "pay_conversion_rate": 0.1 },
+        { "channel_name": "小程序", "pay_conversion_rate": 0.1 },
+        { "channel_name": "网页", "pay_conversion_rate": 0.075 }
       ],
-      "sqlMust": ["GROUP BY channel_name", "ORDER BY pay_conversion_rate DESC"],
-      "caliberPending": "Ticket 05 待裁定口径：评测集预期 0.1/0.1/0.075 = paid_order_cnt/visit_uv；seed 口径 pay_conversion_rate = SUM(paid_order_cnt)/SUM(order_cnt) → 1/1/0.75。两者不等，05 二选一并同步评测集"
+      "sqlMust": ["GROUP BY channel_name", "ORDER BY pay_conversion_rate DESC", "ROUND("],
+      "caliberNote": "Ticket 05 裁定：支付转化率 = SUM(paid_order_cnt)/SUM(visit_uv)，与 ADS 表内既有列 pay_conversion_rate 同口径（0.1/0.1/0.075）；订单→支付的比率由 pay_rate 承担，两指标不重复。APP 与小程序并列 0.1，stub 已加 channel_name ASC 做 tie-breaker"
     },
     {
       "no": 7,
@@ -68,10 +68,14 @@
     {
       "no": 8,
       "question": "10月19日销量排名前三的商品是哪些？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 05",
-      "reason": "DETAIL 已实现，但按销量排序需要 sale_cnt_product 聚合指标（当前 orderBy 用底层字段 sale_cnt，DISTINCT 结果列里没有它）",
-      "requires": ["DISTINCT", "ORDER BY", "LIMIT"]
+      "status": "OK",
+      "rows": [
+        { "product_name": "4K显示器", "sale_cnt_product": 4 },
+        { "product_name": "人体工学椅", "sale_cnt_product": 3 },
+        { "product_name": "机械键盘", "sale_cnt_product": 3 }
+      ],
+      "sqlMust": ["GROUP BY product_name", "ORDER BY sale_cnt_product DESC", "LIMIT 3"],
+      "note": "Ticket 05：销量走 sale_cnt_product 聚合指标（不再用 DETAIL 按底层字段 sale_cnt 排序）；该日恰好 3 个商品，与 LIMIT 3 重合，并列不影响力排序"
     },
     {
       "no": 9,
@@ -122,11 +126,14 @@
     {
       "no": 15,
       "question": "10月19日各渠道GMV占当天总GMV的比例分别是多少？",
-      "status": "BLOCKED",
-      "blocker": "Ticket 05",
-      "reason": "占比语义已在 IR 用 ratio{分子,分母} 声明，但占比计算（跨表/跨指标分母）未实现",
-      "alsoNeeds": "Ticket 05：可用 gmv_channel_ratio 复合指标或直接吃 ratio 字段，二者需在 05 定稿统一",
-      "requires": ["GROUP BY", "RATIO"]
+      "status": "OK",
+      "rows": [
+        { "channel_name": "APP", "gmv_channel_ratio": 0.3832 },
+        { "channel_name": "小程序", "gmv_channel_ratio": 0.2942 },
+        { "channel_name": "网页", "gmv_channel_ratio": 0.3226 }
+      ],
+      "sqlMust": ["GROUP BY channel_name", "ROUND(", "SUM(total_gmv)", "(SELECT SUM(total_gmv)"],
+      "note": "Ticket 05：跨表占比走 gmv_channel_ratio（分子=渠道表 SUM(gmv)，分母=总览表 SUM(total_gmv) 的标量子查询）；IR 的 ratio 字段不再消费。生成 SQL 的列别名取 metricId（gmv_channel_ratio），评测集标准 SQL 写 AS ratio，只比结果不比文本"
     }
   ]
 }

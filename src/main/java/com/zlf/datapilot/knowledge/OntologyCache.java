@@ -64,6 +64,14 @@ public class OntologyCache {
         return snapshot().metricTables;
     }
 
+    /**
+     * 指标 → 跨表占比的分母表（Ticket 05）。只有 composite 且填了 denominator_table 的指标才有条目。
+     * 分母表同样要过白名单与只读校验：标量子查询会真的去读第二张表，漏校验就是把权限边界撕开一个口子。
+     */
+    public Map<String, String> metricDenominatorTables() {
+        return snapshot().metricDenominatorTables;
+    }
+
     /** table.field 复合键白名单（语法闸门二次比对用） */
     public Set<String> tableFields() {
         return snapshot().tableFields;
@@ -117,9 +125,13 @@ public class OntologyCache {
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
             Map<String, String> metricTables = new HashMap<>();
+            Map<String, String> metricDenominatorTables = new HashMap<>();
             for (MetricDef m : metrics) {
                 if (m.getMetricId() != null && m.getTableName() != null) {
                     metricTables.put(m.getMetricId(), m.getTableName());
+                }
+                if (m.getMetricId() != null && m.getDenominatorTable() != null && !m.getDenominatorTable().isBlank()) {
+                    metricDenominatorTables.put(m.getMetricId(), m.getDenominatorTable().trim());
                 }
             }
 
@@ -141,7 +153,7 @@ public class OntologyCache {
                 }
             }
 
-            return new Snapshot(tables, fieldNames, metricIds, metricTables, tableFields,
+            return new Snapshot(tables, fieldNames, metricIds, metricTables, metricDenominatorTables, tableFields,
                     gateThresholds, dimensionTables);
         } catch (DataAccessException e) {
             log.warn("白名单加载失败，返回空快照（fail-closed 拒绝一切）：{}", e.getMessage());
@@ -155,12 +167,13 @@ public class OntologyCache {
             Set<String> fields,
             Set<String> metricIds,
             Map<String, String> metricTables,
+            Map<String, String> metricDenominatorTables,
             Set<String> tableFields,
             Map<String, Integer> gateThresholds,
             Map<String, Set<String>> dimensionTables) {
 
         static Snapshot empty() {
-            return new Snapshot(Set.of(), Set.of(), Set.of(), Map.of(), Set.of(), Map.of(), Map.of());
+            return new Snapshot(Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Set.of(), Map.of(), Map.of());
         }
     }
 }

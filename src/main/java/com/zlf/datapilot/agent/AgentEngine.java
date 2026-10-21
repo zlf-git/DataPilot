@@ -65,6 +65,13 @@ public class AgentEngine {
         ctx.setSessionId(sessionId);
         ctx.setUserQuestion(question);
 
+        // ⓪ 空问题短路（QA-03 P1-1）：不让空白输入走到 LLM/prompt 匹配，
+        // 否则桩会因 few-shot 正文落回 Q1、真模型会自由发挥，两种情况都产出「看着正常」的错数
+        if (question == null || question.isBlank()) {
+            ctx.setErrorMessage("问题为空，请描述你要查什么");
+            return ctx;
+        }
+
         // ① 改写（Ticket 01 透传）
         rewriteStep.execute(ctx);
         // ② 召回

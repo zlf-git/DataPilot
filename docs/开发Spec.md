@@ -43,15 +43,16 @@
 | `GET /api/traces` | AgentOps 查询（A1 判据用） |
 | `GET /api/traces/{traceId}` | 单次问数的 trace + span 明细 |
 
-### 2.2 业务规则（Ontology 语义层，F-01 定稿，seed 已灌 11 条）
+### 2.2 业务规则（Ontology 语义层，F-01 定稿，seed 已灌 11 条 → Ticket 05 后 13 条）
 
 - **4 张 ADS 表**：ads_trade_overview_di / ads_channel_conversion_di / ads_region_gmv_di / ads_product_sales_rank_di
-- **28 字段 + 11 指标**，已灌入 `data_agent` 库（`semantic_model`/`field_metadata`/`metric_def`/`metric_table`/`dimension_def`/`gate_config`）
-- **修正后的指标口径**（审计 C4/C5 已固化）：
-  - 总GMV = `SUM(total_gmv)`；渠道GMV = `SUM(gmv)`；地域GMV = `SUM(gmv)`；商品销售额 = `SUM(sale_amount)`
+- **28 字段 + 13 指标**，已灌入 `data_agent` 库（`semantic_model`/`field_metadata`/`metric_def`/`metric_table`/`dimension_def`/`gate_config`）
+- **修正后的指标口径**（审计 C4/C5 已固化，Ticket 05 收口）：
+  - 总GMV = `SUM(total_gmv)`；渠道GMV = `SUM(gmv)`；地域GMV = `SUM(gmv)`；商品销售额 = `SUM(sale_amount)`；商品销量 = `SUM(sale_cnt)`
   - 订单量拆三表：总订单数 `SUM(total_order_cnt)`、渠道订单数 `SUM(order_cnt)`、地域订单数 `SUM(order_cnt)`
-  - 支付用户数 = `uv` 类型（跨期不可加）；支付率 = `composite`（`SUM(paid_order_cnt)/SUM(total_order_cnt)`）；支付转化率 = `simple`（直接取 `pay_conversion_rate` 字段）
-- **⚠️ 缺口（审计 P0#6）**：11 指标里**没有「销量」**，Q8「销量排名前三」无指标可命中，只能走字段层回退。**阶段② 补 `sale_cnt_product` 指标（`SUM(sale_cnt)`）**，补齐后为 **12 指标**。
+  - 支付用户数 = `uv` 类型（跨期不可加）；支付率 = `composite`（`SUM(paid_order_cnt)/SUM(total_order_cnt)`）
+  - 支付转化率 = `composite`（`SUM(paid_order_cnt)/SUM(visit_uv)`，与 ADS 表内既有列同口径）；渠道GMV占比 = `composite` 跨表（分母 `ads_trade_overview_di` 的 `SUM(total_gmv)`）
+- **原缺口（审计 P0#6）已闭环**：Ticket 05 补了 `sale_cnt_product`，Q8 走指标命中，不做字段层回退。
 
 ### 2.3 已有模块（代码现状，探索代理已核实）
 
@@ -104,7 +105,7 @@ data_agent 库 + 11 表 + seed（11 指标修正口径）、agent_ro 账号 + GR
 |---|---|---|---|---|---|
 | B1 | IR 加 `selectMode` | `QueryIr` 加 `selectMode ∈ {AGG, DETAIL}`；`metrics` 允许为空，但 `metrics 为空时 dimensions≥1`，生成 `SELECT DISTINCT` | IR_Schema、Prompt、IrToSqlConverter | AgentEngine 骨架 | Q4/Q5 能生成 `SELECT DISTINCT province_name ...` 且对拍通过 |
 | B2 | IR 加 `timeRange`（半开区间） | `QueryIr` 加 `timeRange{relativeWindow,days,anchor}`；**anchor 必须取 `MAX(dt)`（非 now()）**；**端点语义写死：含当天 `max`、不含第 8 天**，**展开式写死为 `dt > ? AND dt <= ?`（两参数：`max-7d` / `max`；全文禁用 `BETWEEN`——闭区间会取 10-12~10-19 共 8 个日期值）**；**anchor 查询缓存到 RecallStep，别每个 Step 查一次** | IR_Schema、Prompt、IrToSqlConverter、RecallStep | B1 | Q2/Q11-Q14「近7天」生成正确半开区间，不取 8 天 |
-| B3 | 复合指标（比值） | `metric_def.metric_type=composite` 的 `metric_sql` 是表达式（如 `SUM(a)/SUM(b)`）；**最终输出写死：中间列在 SQL 内用子查询/表达式消掉，最终 `SELECT dim, ROUND(a/b, 4) AS ratio`，只回 2 列** | metric_def、IrToSqlConverter、执行模块 | B2 | Q15 生成 `SELECT channel_name, ROUND(gmv/total_gmv,4) AS ratio` 两列，对拍通过 |
+| B3 | 复合指标（比值） | `metric_def.metric_type=composite` 的 `metric_sql` 是表达式（如 `SUM(a)/SUM(b)`）；跨表时分母走 `denominator_table`+`denominator_sql` 的标量子查询；**最终输出写死：中间列在 SQL 内消掉，最终 `SELECT dim, ROUND(a/b, 4) AS <metricId>`，只回 2 列**（别名统一取 metricId，原稿的 `AS ratio` 与 Q6/Q9 的复合指标别名冲突，Ticket 05 改统一规则） | metric_def、IrToSqlConverter、执行模块 | B2 | Q15 生成 `SELECT channel_name, ROUND(...) AS gmv_channel_ratio` 两列，对拍通过 |
 | B4 | 别名排序 | `OrderBy` 允许引用 `metricId`，生成器统一 `ORDER BY <alias>`（聚合列别名固定为 metric_sql 的别名，不靠撞名） | IR_Schema、IrToSqlConverter | B2 | Q11-Q13 按聚合别名排序不报错 |
 | B5 | 补销量指标 | `metric_def` 补 `sale_cnt_product`（`SUM(sale_cnt)`，metric_type=simple，商品表），seed 补一条 | seed.sql、§2.2 | 阶段① seed | Q8「销量排名前三」走指标命中，不再依赖字段层回退 |
 | B6 | 维度字典一对多 | `dimension_def` 的「日期/时间」维度不绑定单一表：dt 在 4 张表都有，字典改为 `(dim_name, field_name)` 不带单一 table，或允许 `(dim_name, table_name)` 多行 | dimension_def、存在性闸门 | 阶段① seed | Q6 等含 dt 过滤的题不因维度越界被误拦 |

@@ -58,6 +58,11 @@ public class ExistenceGate implements Gate {
                 if (table != null && !cache.tables().contains(table)) {
                     return GateResult.reject("指标关联的表不在白名单：" + table);
                 }
+                // Ticket 05：跨表占比的分母表也会被标量子查询真实读取，必须单独过白名单
+                String denTable = cache.metricDenominatorTables().get(m.getMetricId());
+                if (denTable != null && !cache.tables().contains(denTable)) {
+                    return GateResult.reject("指标 " + m.getMetricId() + " 的分母表不在白名单：" + denTable);
+                }
             }
         }
 
