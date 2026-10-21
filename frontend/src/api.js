@@ -111,7 +111,9 @@ export const api = {
   // ---- 元数据 / 字段白名单 ----
   tables: () => request('/api/metadata/tables'),
   fields: () => request('/api/metadata/fields'),
-  putField: (f) => request('/api/metadata/fields', { method: 'PUT', body: f }),
+  /** mode=create：已存在则后端 409（不覆盖）；mode=upsert：覆盖 */
+  putField: (f, mode = 'upsert') =>
+    request(`/api/metadata/fields?mode=${encodeURIComponent(mode)}`, { method: 'PUT', body: f }),
   deleteField: (tableName, fieldName) =>
     request(
       `/api/metadata/fields?tableName=${encodeURIComponent(tableName)}&fieldName=${encodeURIComponent(fieldName)}`,

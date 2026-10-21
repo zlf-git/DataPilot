@@ -420,6 +420,22 @@ async function textOf(page, selector) {
   await clickButton(page, '取消')
   await new Promise((r) => setTimeout(r, 500))
 
+  // 正向保存一条（QA-13 P3-7 指出此前只测了渲染与负向）：
+  // 打开 gmv_total 的编辑框直接保存 —— 值一个都不改，因此不会污染口径，
+  // 但会真的走一遍 PUT /api/metrics，把「编辑保存」这条路径纳入回归网。
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.ant-table-row')].find((r) => r.innerText.includes('gmv_total'))
+    if (row) {
+      const btn = [...row.querySelectorAll('button')].find((b) => b.innerText.includes('编辑'))
+      if (btn) btn.click()
+    }
+  })
+  await waitText(page, '编辑指标', 20000)
+  await clickButton(page, '保存')
+  await waitText(page, '已保存，白名单缓存会立即刷新', 20000)
+  check('指标页：编辑后保存走通（PUT /api/metrics 正向路径）',
+    (await bodyText(page)).includes('已保存，白名单缓存会立即刷新'))
+
   // ---- 5. 元数据 / 白名单页 ----
   await clickNav(page, '元数据')
   // 等真实表名，而不是等卡片标题 —— 标题在数据回来之前就已经渲染出来了
@@ -429,6 +445,22 @@ async function textOf(page, selector) {
   check('元数据页：写开关状态与后端一致', writeEnabled ? !metaText.includes('写入已急停') : metaText.includes('写入已急停'))
 
   if (writeEnabled) {
+    // 先用「新增」撞一个已存在的字段（QA-13 P2-2）：必须是 409 + 明确提示，
+    // 而不是把原来那条的 field_role / enum_values 静默覆盖掉。
+    // 这一条是「新增 vs 编辑」两种语义分开的直接证据。
+    await clickButton(page, '新增字段')
+    await waitText(page, '新增字段', 20000)
+    await fillByPlaceholder(page, '.ant-modal', 'channel_name', 'dt')
+    await fillByPlaceholder(page, '.ant-modal', 'varchar(32)', 'varchar(8)')
+    await fillByPlaceholder(page, '.ant-modal', '渠道名称', '冒烟重复新增')
+    await new Promise((r) => setTimeout(r, 300))
+    await clickButton(page, '保存')
+    await waitText(page, '已在白名单里', 20000)
+    check('元数据页：新增已存在的字段 → 409 且提示「要改请用编辑」',
+      (await bodyText(page)).includes('已在白名单里'))
+    await clickButton(page, '取消')
+    await new Promise((r) => setTimeout(r, 400))
+
     // 真写一条白名单字段，再从页面摘掉 —— 闭环验证 PUT + DELETE 且不留残留
     await clickButton(page, '新增字段')
     await waitText(page, '新增字段', 20000)
@@ -477,12 +509,74 @@ async function textOf(page, selector) {
   const gatePage = await bodyText(page)
   check('闸门页：四个阈值参数齐全', ['max_join', 'max_metric', 'max_limit', 'max_rows'].every((k) => gatePage.includes(k)))
 
+  // 正向保存（QA-13 P3-7）：把 max_rows 1000 → 999，确认生效，再改回 1000。
+  // 为什么不用「原值保存」：该页的值没变时按钮是 disabled 的，点不动 ——
+  // 那就证明不了保存路径能走。改完必须改回来，冒烟脚本不能给闸门参数留残留。
+  if (writeEnabled) {
+    const setGate = async (v) => {
+      await page.evaluate((val) => {
+        const tr = [...document.querySelectorAll('tr')].find((t) => t.innerText.includes('max_rows'))
+        if (!tr) return false
+        const el = tr.querySelector('input')
+        if (!el) return false
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+        setter.call(el, String(val))
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        return true
+      }, v)
+      await new Promise((r) => setTimeout(r, 300))
+      await page.evaluate(() => {
+        const tr = [...document.querySelectorAll('tr')].find((t) => t.innerText.includes('max_rows'))
+        const btn = tr && [...tr.querySelectorAll('button')].find((b) => !b.disabled && b.innerText.includes('保存'))
+        if (btn) btn.click()
+      })
+      await waitText(page, `max_rows 已改为 ${v}`, 20000)
+      await new Promise((r) => setTimeout(r, 400))
+    }
+
+    await setGate(999)
+    const gateAfter = await page.evaluate(async () => {
+      const r = await fetch('/api/gate-config')
+      const list = await r.json()
+      const row = list.find((g) => g.paramKey === 'max_rows')
+      return row ? row.paramValue : null
+    })
+    check('闸门页：改阈值真的落库（max_rows = 999）', String(gateAfter) === '999', String(gateAfter))
+
+    await setGate(1000)
+    const gateRestored = await page.evaluate(async () => {
+      const r = await fetch('/api/gate-config')
+      const list = await r.json()
+      const row = list.find((g) => g.paramKey === 'max_rows')
+      return row ? row.paramValue : null
+    })
+    check('闸门页：改回原值 1000（不留残留）', String(gateRestored) === '1000', String(gateRestored))
+
+    // 收尾还要还原 updated_by：页面保存会把它写成当前身份，而这一行原值是 NULL。
+    // 「值改回去了」不等于「没留痕」—— 参数表里多一个「谁在什么时候改的」是实打实的污染。
+    await page.evaluate(async () => {
+      const token = sessionStorage.getItem('dp.basic')
+      await fetch('/api/gate-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify({ paramKey: 'max_rows', paramValue: '1000', updatedBy: null }),
+      })
+    })
+    const gateClean = await page.evaluate(async () => {
+      const r = await fetch('/api/gate-config')
+      const row = (await r.json()).find((g) => g.paramKey === 'max_rows')
+      return row ? row.updatedBy : 'missing'
+    })
+    check('闸门页：updated_by 已还原为 NULL（冒烟不留「谁改的」痕迹）', gateClean === null, String(gateClean))
+  }
+
   // ---- 7. 全程没有前端异常 ----
   // 两类是「预期内的噪音」，不算前端缺陷：
   //   ① 指标页负向用例故意打的 400（不做这条就测不到口径白名单）；
   //   ② 报告 iframe 里 ECharts 的 CDN 脚本（离线环境取不到 jsdelivr）。
   // 其余任何 console error / pageerror 都算失败 —— React 崩溃、字段 undefined 都会在这里现形。
-  const expectedNoise = (e) => /status of 400/.test(e) || /Failed to load resource/.test(e) || /jsdelivr/.test(e)
+  // 400 = 指标页负向（口径非法）；409 = 元数据页负向（新增撞已存在）。两条都是故意打的
+  const expectedNoise = (e) => /status of 4(00|09)/.test(e) || /Failed to load resource/.test(e) || /jsdelivr/.test(e)
   const realErrors = pageErrors.filter((e) => !expectedNoise(e))
   check('浏览器控制台无意外报错（React/组件异常会在这里现形）', realErrors.length === 0, realErrors.slice(0, 3).join(' | '))
 

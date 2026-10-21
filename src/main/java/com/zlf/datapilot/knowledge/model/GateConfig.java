@@ -10,7 +10,11 @@ public class GateConfig {
 
     private Long id;
 
-    @NotBlank(message = "gateName 不能为空")
+    /**
+     * 闸门名（cost / existence / permission / syntax / result）。<b>不再 @NotBlank</b>（QA-13 P3-2）：
+     * 服务端 {@code validateGateConfig} 立刻按 {@code param_key} 覆盖它，要求调用方填一个会被丢掉的值，
+     * 只会让「只传 paramKey/paramValue」的调用方吃一个没有意义的 400。
+     */
     private String gateName;
 
     @NotBlank(message = "paramKey 不能为空")

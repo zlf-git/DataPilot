@@ -100,6 +100,21 @@ public class MetadataService {
      * 所以三件事在写库前拦掉：表必须已注册、字段名/表名合法、角色与枚举值合法。
      */
     public FieldMetadata putField(FieldMetadata f) {
+        return putField(f, false);
+    }
+
+    /**
+     * 字段白名单写入，可要求「只新建、不覆盖」（QA-13 P2-2）。
+     *
+     * @param createOnly {@code true} 时若该 (table, field) 已存在则抛 409。
+     *                   页面的「新增字段」走这条路：没有它，「新增」实际是覆盖 ——
+     *                   填一个已存在的字段名不报重复，而是把原来的 field_role / field_comment /
+     *                   enum_values 静默盖掉。两个人在维护白名单时，后者会无感改掉前者的配置，
+     *                   而 field_role 一改，闸门对这条字段的校验口径就跟着变了。
+     *                   <p>为什么必须由接口决定而不是前端查一遍：前端查重是「尽力而为」，
+     *                   并发下两个人同时新增照样都成功；而且第三方调用方根本不经过页面。
+     */
+    public FieldMetadata putField(FieldMetadata f, boolean createOnly) {
         if (f == null) {
             throw new IllegalArgumentException("字段定义不能为空");
         }
@@ -131,6 +146,13 @@ public class MetadataService {
 
         validateEnumValues(f.getEnumValues());
 
+        if (createOnly && repo.findField(f.getTableName(), f.getFieldName()) != null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "字段 " + f.getTableName() + "." + f.getFieldName()
+                            + " 已在白名单里，要改请用编辑（新增不会覆盖已有配置）");
+        }
+
         repo.saveField(f);
         publisher.publishEvent(new MetadataChangedEvent("field", f.getTableName() + "." + f.getFieldName()));
         return f;
@@ -148,7 +170,8 @@ public class MetadataService {
         validateFieldName(fieldName, "field_name");
         FieldMetadata existing = repo.findField(tableName, fieldName);
         if (existing == null) {
-            throw new IllegalArgumentException(
+            // 404 而不是 400（QA-13 P3-1）：东西没了和参数传错，处置方式不一样
+            throw new com.zlf.datapilot.exception.NotFoundException(
                     "字段不存在：" + tableName + "." + fieldName + "（刷新页面看看是不是已被别人摘掉）");
         }
         int dimRefs = repo.countDimensionRefs(tableName, fieldName);
@@ -163,8 +186,42 @@ public class MetadataService {
                     "字段 " + fieldName + " 仍出现在指标可用维度中（" + String.join(", ", metricRefs)
                             + "），请先改 metric_def.dimensions 再摘白名单");
         }
+        // 第三条守卫（QA-13 P2-1）：口径里写的列。漏了它，paid_order_cnt 这种「只被 metric_sql 引用」
+        // 的字段会被摘掉，而摘掉之后行为还会分叉 —— 简单指标照样跑（物理列还在，白名单只管闸门），
+        // 复合指标报「字段不属于表」。用户看到的原因完全指错了地方。
+        List<String> sqlRefs = metricIdsReferencingColumn(tableName, fieldName);
+        if (!sqlRefs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "字段 " + fieldName + " 仍被指标口径引用（" + String.join(", ", sqlRefs)
+                            + "），请先改 metric_def 的 metric_sql / denominator_sql 再摘白名单");
+        }
         repo.deleteField(tableName, fieldName);
         publisher.publishEvent(new MetadataChangedEvent("field", tableName + "." + fieldName));
+    }
+
+    /**
+     * 哪些指标的 SQL 里真的出现了这一列（QA-13 P2-1）。
+     *
+     * <p><b>不能用 {@code contains} / {@code LIKE '%x%'}</b>：{@code dt} 会命中 {@code create_dt}，
+     * 仓库里 {@code dimensions} 那条用 {@code FIND_IN_SET} 规避过同一个坑，这里同理。
+     * 用前后字符边界精确匹配：{@code SUM(paid_order_cnt)}、{@code `paid_order_cnt`}、
+     * {@code a.paid_order_cnt} 都算引用，{@code create_dt} 不算。
+     *
+     * <p>代价：别名 {@code AS paid_order_cnt} 也会被算成引用（多拦一次，不会漏拦）。
+     * 宁可让人先去改口径，也不要放行一条「摘了之后指标静默报错」的删除。
+     */
+    private List<String> metricIdsReferencingColumn(String tableName, String fieldName) {
+        String regex = "(?<![A-Za-z0-9_])" + java.util.regex.Pattern.quote(fieldName) + "(?![A-Za-z0-9_])";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(regex, java.util.regex.Pattern.CASE_INSENSITIVE);
+        return repo.listMetricSqlRefs(tableName).stream()
+                .filter(r -> mentionsColumn(p, r.metricSql()) || mentionsColumn(p, r.denominatorSql()))
+                .map(MetadataRepository.MetricSqlRef::metricId)
+                .distinct()
+                .toList();
+    }
+
+    private static boolean mentionsColumn(java.util.regex.Pattern p, String sql) {
+        return sql != null && !sql.isBlank() && p.matcher(sql).find();
     }
 
     private void validateFieldName(String v, String label) {
@@ -195,7 +252,10 @@ public class MetadataService {
         validateGateConfig(g);
         repo.saveGateConfig(g);
         publisher.publishEvent(new MetadataChangedEvent("gate", g.getGateName() + "." + g.getParamKey()));
-        return g;
+        // 回显落库行而不是请求体（QA-13 P3-3）：库里 update_time 由 DB 填，
+        // 直接把入参丢回去会让调用方拿到 updateTime=null，前端只能靠重新 load() 兜。
+        GateConfig saved = repo.findGateConfig(g.getGateName(), g.getParamKey());
+        return saved != null ? saved : g;
     }
 
     public Map<String, Object> metadataHealth() {

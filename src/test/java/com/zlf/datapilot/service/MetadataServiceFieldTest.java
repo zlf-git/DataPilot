@@ -144,13 +144,80 @@ class MetadataServiceFieldTest {
     }
 
     @Test
-    @DisplayName("删除不存在的字段 → 拒绝")
+    @DisplayName("删除不存在的字段 → 404（不是 400：东西没了 ≠ 参数传错，QA-13 P3-1）")
     void deleteRejectsMissingField() {
         when(repo.findField(anyString(), anyString())).thenReturn(null);
         assertThatThrownBy(() -> service.deleteField("ads_channel_conversion_di", "nope"))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(com.zlf.datapilot.exception.NotFoundException.class)
                 .hasMessageContaining("字段不存在");
         verify(repo, never()).deleteField(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("删除只被指标口径引用的字段 → 拒绝，并点名是哪几个指标（QA-13 P2-1）")
+    void deleteRejectsFieldReferencedByMetricSql() {
+        when(repo.findField(anyString(), anyString()))
+                .thenReturn(field("ads_trade_overview_di", "paid_order_cnt", "metric", null));
+        when(repo.countDimensionRefs(anyString(), anyString())).thenReturn(0);
+        when(repo.metricIdsUsingField(anyString())).thenReturn(List.of());
+        when(repo.listMetricSqlRefs("ads_trade_overview_di")).thenReturn(List.of(
+                new MetadataRepository.MetricSqlRef("paid_order_cnt", "SUM(paid_order_cnt)", null),
+                new MetadataRepository.MetricSqlRef("pay_rate", "SUM(paid_order_cnt)/SUM(total_order_cnt)", null),
+                // 干扰项：另一列只是名字里含子串，不算引用
+                new MetadataRepository.MetricSqlRef("create_dt_metric", "SELECT create_dt FROM t", null),
+                // 干扰项：SQL 里根本没这一列
+                new MetadataRepository.MetricSqlRef("gmv_total", "SUM(total_gmv)", null)));
+
+        assertThatThrownBy(() -> service.deleteField("ads_trade_overview_di", "paid_order_cnt"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("仍被指标口径引用")
+                .hasMessageContaining("paid_order_cnt")
+                .hasMessageContaining("pay_rate")
+                // 「create_dt」不能被当成「dt」，也不能因为子串命中就把无关指标列进来
+                .hasMessageNotContaining("create_dt_metric")
+                .hasMessageNotContaining("gmv_total");
+        verify(repo, never()).deleteField(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("分母 SQL 里引用了这一列也要拦（QA-13 P2-1：别只守主表半边）")
+    void deleteRejectsFieldReferencedByDenominatorSql() {
+        when(repo.findField(anyString(), anyString()))
+                .thenReturn(field("ads_trade_overview_di", "visit_uv", "metric", null));
+        when(repo.countDimensionRefs(anyString(), anyString())).thenReturn(0);
+        when(repo.metricIdsUsingField(anyString())).thenReturn(List.of());
+        when(repo.listMetricSqlRefs("ads_trade_overview_di")).thenReturn(List.of(
+                new MetadataRepository.MetricSqlRef("uv_rate", "SUM(total_gmv)", "SUM(visit_uv)")));
+
+        assertThatThrownBy(() -> service.deleteField("ads_trade_overview_di", "visit_uv"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("uv_rate");
+    }
+
+    @Test
+    @DisplayName("mode=create 撞已存在 → 409（新增不该静默覆盖别人的配置，QA-13 P2-2）")
+    void createModeRejectsExistingField() {
+        FieldMetadata existing = field("ads_channel_conversion_di", "channel_name", "dimension", "[\"APP\",\"小程序\"]");
+        when(repo.findField("ads_channel_conversion_di", "channel_name")).thenReturn(existing);
+        when(repo.listTables()).thenReturn(List.of(table("ads_channel_conversion_di")));
+
+        FieldMetadata incoming = field("ads_channel_conversion_di", "channel_name", null, null);
+        assertThatThrownBy(() -> service.putField(incoming, true))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("已在白名单里");
+        // 关键：一条都不该写进去
+        verify(repo, never()).saveField(any());
+    }
+
+    @Test
+    @DisplayName("默认 upsert 仍可覆盖（老契约不变，不能因为加 create 就把编辑路径堵死）")
+    void upsertModeStillOverwrites() {
+        when(repo.listTables()).thenReturn(List.of(table("ads_channel_conversion_di")));
+        FieldMetadata incoming = field("ads_channel_conversion_di", "channel_name", null, null);
+
+        service.putField(incoming);
+
+        verify(repo).saveField(incoming);
     }
 
     @Test

@@ -61,13 +61,21 @@ public class MetadataController {
 
     /**
      * 字段白名单写入（写，需 write-enabled；Ticket 13）。
-     * 按 (table_name, field_name) upsert —— 页面「新增字段」与「编辑字段」走同一个口，
-     * 不留两个语义重叠的接口。
+     *
+     * <p>按 (table_name, field_name) upsert —— 页面「编辑字段」用它。但如果「新增字段」也用它，
+     * 「新增」实际就是覆盖：填一个已存在的字段名不报重复，而是把原来的 field_role / field_comment /
+     * enum_values 静默盖掉（QA-13 P2-2）。所以加了 {@code mode}：
+     * <ul>
+     *   <li>{@code mode=create}（页面「新增」）→ 已存在则 <b>409</b>，不覆盖；</li>
+     *   <li>{@code mode=upsert}（默认，页面「编辑」/ 第三方同步）→ 覆盖。</li>
+     * </ul>
+     * 默认仍是 upsert 而不是 create：这是已有的对外契约，改默认值等于让老调用方突然开始吃 409。
      */
     @PutMapping("/metadata/fields")
-    public ResponseEntity<?> putField(@RequestBody FieldMetadata f) {
+    public ResponseEntity<?> putField(@RequestBody FieldMetadata f,
+                                      @RequestParam(defaultValue = "upsert") String mode) {
         checkWriteEnabled();
-        return ResponseEntity.ok(service.putField(f));
+        return ResponseEntity.ok(service.putField(f, "create".equalsIgnoreCase(mode)));
     }
 
     /** 把字段移出白名单（写，需 write-enabled；Ticket 13）：被维度字典/指标维度引用时 400 */

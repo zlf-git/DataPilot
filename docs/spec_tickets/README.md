@@ -65,6 +65,14 @@
 
 ## 修订记录
 
+### v2.23（QA-13 收口：2 条 P2 + 7 条 P3 全修）
+
+- **P2-1 删除守卫补第三关**：此前只查维度字典与指标可用维度，不查口径里写的列 —— `paid_order_cnt` 被两个指标的 `metric_sql` 引用仍能摘掉，摘掉后「简单指标照跑、复合指标报字段不属于表」。现在按主表 + 分母表取指标 SQL，用前后字符边界正则匹配（不用 `LIKE`，`dt` 会命中 `create_dt`）
+- **P2-2 新增 vs 覆盖分开**：`PUT /api/metadata/fields?mode=create` 撞已有键 → 409；默认仍 upsert。页面「新增」走 create，不再静默覆盖别人的 `field_role/enum_values`
+- **P3 修 7 条**：删不存在 → 404（不再与参数错误混成 400）；`gateName` 去掉 `@NotBlank`（服务端派生）+ 修「gateName gateName 不能为空」重复；`PUT gate-config` 回显落库行（含 `update_time`）；事件 javadoc 补 `field`；抽屉保留维度 `alias`；抽屉 `limit` 上限对齐 `max_limit`；冒烟补 4 条正向保存 + 1 条 409 负向
+- **一处报告偏严已如实说明**：QA-13 说 `paid_order_cnt` 被 3 个指标引用，实测 2 个 —— `pay_conversion_rate` 的 SQL 引用的是另一张表的同名列，按表过滤才对（否则守卫变误报机器）
+- 数据：`mvn -o test` **190/190**（`MetadataServiceFieldTest` 13→17）、冒烟 **37/37**、`verify_hitl` 76/76、其余脚本无回归
+
 ### v2.22（Ticket 14 鉴权最小落地 + QA-12 P2-3 收口）
 
 - **三角色 + HTTP Basic，只保护写接口**：`BUSINESS` 只读、`ADMIN` 全部写、`DBA` 仅字段白名单（DBA 是 admin 的子集，不是别名）。

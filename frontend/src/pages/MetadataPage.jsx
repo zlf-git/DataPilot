@@ -86,7 +86,11 @@ export default function MetadataPage() {
   const submit = async () => {
     const v = await form.validateFields()
     try {
-      await api.putField({ ...v, tableName: activeTable })
+      // 「新增」与「编辑」必须走两种语义（QA-13 P2-2）：
+      // 都用 upsert 时，新增一个已存在的字段名不会报重复，而是把原来的
+      // field_role / field_comment / enum_values 静默盖掉 —— 后者一改，
+      // 闸门对这条字段的校验口径就跟着变了，而操作者以为是「新建了一条」。
+      await api.putField({ ...v, tableName: activeTable }, editing ? 'upsert' : 'create')
       message.success('已写入白名单，闸门立即可见（缓存已刷新）')
       setOpen(false)
       load()

@@ -265,6 +265,26 @@ public class MetadataRepository {
                 String.class, fieldName);
     }
 
+    /** 指标的 SQL 文本（QA-13 P2-1：删白名单前还要看口径里有没有引用这一列） */
+    public record MetricSqlRef(String metricId, String metricSql, String denominatorSql) {
+    }
+
+    /**
+     * 取「可能引用这张表」的指标 SQL（QA-13 P2-1）。
+     *
+     * <p>两类都要取：{@code table_name} 是这条指标的<b>主表</b>，
+     * {@code denominator_table} 是跨表占比的<b>分母表</b> —— 分母 SQL 同样是手写列名的地方，
+     * 漏了它就会出现「主表字段守着、分母表字段随便摘」的半边守卫。
+     */
+    public List<MetricSqlRef> listMetricSqlRefs(String tableName) {
+        return jdbc.query(
+                "SELECT metric_id, metric_sql, denominator_sql FROM metric_def " +
+                        "WHERE table_name = ? OR denominator_table = ?",
+                (rs, i) -> new MetricSqlRef(rs.getString("metric_id"),
+                        rs.getString("metric_sql"), rs.getString("denominator_sql")),
+                tableName, tableName);
+    }
+
     public void saveMetric(MetricDef m) {
         MetricDef existing = findByMetricId(m.getMetricId());
         if (existing != null) {

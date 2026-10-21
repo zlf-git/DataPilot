@@ -26,6 +26,8 @@ export default function PreviewDrawer({ open, preview, onClose, onExecuted }) {
   const { message } = AntApp.useApp()
   const [values, setValues] = useState([])
   const [limit, setLimit] = useState(null)
+  // 代价闸门的 max_limit（默认 1000，进抽屉时向 /api/gate-config 取真值）
+  const [maxLimit, setMaxLimit] = useState(1000)
   const [dirs, setDirs] = useState([])
   const [dims, setDims] = useState([])
   const [fieldOptions, setFieldOptions] = useState([])
@@ -56,6 +58,22 @@ export default function PreviewDrawer({ open, preview, onClose, onExecuted }) {
       .catch(() => setFieldOptions([]))
   }, [open])
 
+  // limit 的输入上限取代价闸门的真值（QA-13 P3-6）：写死 5000 时，
+  // 1001~5000 是「前端允许填、代价闸门必拒」，用户会以为是自己填错了。
+  useEffect(() => {
+    if (!open) return
+    api
+      .gateConfigs()
+      .then((list) => {
+        const row = (list || []).find((g) => g && g.paramKey === 'max_limit')
+        const v = row && Number(row.paramValue)
+        if (v && v > 0) setMaxLimit(v)
+      })
+      .catch(() => {
+        // 取不到就保留默认 1000：这只是个输入框上限，不该因为它让整个抽屉打不开
+      })
+  }, [open])
+
   const buildIr = () => {
     const next = JSON.parse(JSON.stringify(ir))
     next.filters = (next.filters ?? []).map((f, i) => {
@@ -77,7 +95,13 @@ export default function PreviewDrawer({ open, preview, onClose, onExecuted }) {
     if (next.orderBy) {
       next.orderBy = next.orderBy.map((o, i) => ({ ...o, direction: dirs[i] ?? o.direction }))
     }
-    next.dimensions = dims.map((d) => ({ field: d }))
+    // 保留 alias（QA-13 P3-5）：这里只该改「有哪些维度」，不该顺手抹掉维度别名。
+    // 当前桩 IR 没有 alias 所以看不出来，但 LLM 真链路会产出 alias ——
+    // 抹掉它等于改了展示列名，而且只在「动过抽屉任何一项」之后才发生，极难复盘。
+    const aliasOf = new Map(
+      (ir.dimensions ?? []).filter((d) => d && d.field && d.alias).map((d) => [d.field, d.alias]),
+    )
+    next.dimensions = dims.map((d) => (aliasOf.has(d) ? { field: d, alias: aliasOf.get(d) } : { field: d }))
     return next
   }
 
@@ -173,7 +197,10 @@ export default function PreviewDrawer({ open, preview, onClose, onExecuted }) {
               <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
                 limit
               </Text>
-              <InputNumber min={1} max={5000} value={limit} onChange={setLimit} style={{ width: 160 }} />
+              {/* 上限跟 /api/gate-config 的 max_limit 对齐（QA-13 P3-6）：
+                  写死 5000 会让人填出 1001~5000 这种「前端允许、代价闸门必拒」的值，
+                  用户以为是自己填错了，其实两边上限从来没对齐过。 */}
+              <InputNumber min={1} max={maxLimit} value={limit} onChange={setLimit} style={{ width: 160 }} />
             </div>
             {(ir?.orderBy ?? []).map((o, i) => (
               <div key={`${o.field}-${i}`}>
