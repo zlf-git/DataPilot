@@ -31,3 +31,7 @@ Ticket 02、03、04、05（口径定稿后才写注释）+ 15（gate_config 参�
 ## 不包含
 - 旧 3 份升版（已挪到 Ticket 00）
 - 新功能
+
+## 交接（来自 Ticket 07）
+
+- `SqlExecutor.listTables()`（读 information_schema 拿表/列/表注释）由本票的「语义模型 ↔ 物理表一致性巡检」消费，现无业务调用方是有意留的（QA-07 P2-3）。

@@ -146,6 +146,22 @@ def rowset_eq(actual, expected, tol=TOL):
     return True, ''
 
 
+REQUIRED_SOURCES = ('questions_and_expect_sql', 'sql_must_and_window')
+
+
+def source_sha256(path):
+    """来源内容指纹：与 gen_golden_set.sha256_full 同一算法（文本读入 + 换行归一 \n 再哈希）。
+
+    不哈希原始字节，否则「仓库存 LF / Windows 工作区 checkout 成 CRLF」会让同一个提交
+    在两个环境算出不同指纹 —— QA-06c P1-1 实测：工作区 PASS（6abbf84e），
+    `git archive` 干净副本 FAIL（1eb75d3a），评审机第一条命令就红。
+    """
+    with open(path, 'r', encoding='utf-8') as fp:
+        text = fp.read()
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
 def source_drift(doc):
     """重算 sources 里登记的来源文件 sha256（QA-06a P2-1：此前是只写不校验的死指纹）。
 
@@ -156,6 +172,11 @@ def source_drift(doc):
     src = doc.get('sources') or {}
     if not src:
         return ['sources 缺失：无法证明这份 golden_set 对应哪版文档']
+    # QA-06c P2-1：只校验「登记了的条目有没有漂移」是不够的 —— 删掉一个条目就没人查了。
+    # 两份来源（题目/期望 SQL 来自文档、sql_must/窗口来自 expectations）都必须登记，缺一即 FAIL。
+    missing = [k for k in REQUIRED_SOURCES if k not in src]
+    if missing:
+        issues.append('sources 缺条目：%s（删条目不能静默通过，两份来源都必须登记）' % ', '.join(missing))
     for key, meta in src.items():
         if isinstance(meta, dict):
             path, want = meta.get('path'), meta.get('sha256') or ''
@@ -169,7 +190,7 @@ def source_drift(doc):
         if not os.path.exists(full):
             issues.append('sources.%s 指向的文件不存在：%s' % (key, path))
             continue
-        got = hashlib.sha256(open(full, 'rb').read()).hexdigest()
+        got = source_sha256(full)
         if not sha_match(want, got):
             issues.append('来源已漂移：%s 记录 %s，实际 %s（文档改了但没重跑 gen_golden_set.py？）'
                           % (path, want[:12] or '<空>', got[:12]))

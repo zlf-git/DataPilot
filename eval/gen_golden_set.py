@@ -63,9 +63,17 @@ Q_BLOCK = re.compile(r'\*\*Q(\d+)\*\*[ \t]*(.+?)[ \t]*\n+```sql\n(.*?)```', re.S
 
 
 def sha256_full(path):
-    """存全量指纹：只存 12 位前缀时校验器无法排除碰撞，且与 result.json 的 sha 对不上。"""
-    with open(path, 'rb') as fp:
-        return hashlib.sha256(fp.read()).hexdigest()
+    """来源内容指纹（全量，不用 12 位前缀：前缀无法排除碰撞，也与 result.json 的 sha 对不上）。
+
+    <p>按 UTF-8 文本读入、把换行统一成 \\n 再哈希，**不哈希原始字节**。
+    仓库里存的是 LF，Windows 工作区 checkout 成 CRLF，同一个提交在两处会算出不同指纹
+    （QA-06c P1-1 实测：工作区 6abbf84e… / `git archive` 干净副本 1eb75d3a…，
+    结果「开发机 PASS、评审机 FAIL」）。指纹要盯的是文档内容变没变，不是谁用什么换行风格 checkout。
+    """
+    with open(path, 'r', encoding='utf-8') as fp:
+        text = fp.read()
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
 def strip_sql_comments(sql):

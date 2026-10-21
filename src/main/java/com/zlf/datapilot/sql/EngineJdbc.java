@@ -29,6 +29,8 @@ import java.util.Set;
  *       由查询阶段显式报错（与「查不到锚点显式失败」一致），不在启动期抛异常拖住整条链路。</li>
  *   <li>{@code engine.type} 写错（如 {@code mysqll}）<b>启动即失败</b>，不留「两个执行器都没装配 →
  *       运行到执行步骤才 NoSuchBeanDefinition」的隐式坑（Ticket 07）。</li>
+ *   <li>{@code engine.type} <b>缺省/空值归一成 starrocks</b>，与 {@code matchIfMissing=true} 对齐
+ *       （QA-07 P2-2：此前条件装 StarRocks、构造抛「不受支持」，两套默认值互相矛盾）。</li>
  * </ul>
  */
 @Component
@@ -45,10 +47,14 @@ public class EngineJdbc {
 
     public EngineJdbc(DatapilotProperties props) {
         DatapilotProperties.Engine engine = props.getEngine();
-        String type = engine.getType() == null ? "" : engine.getType().trim().toLowerCase();
+        // 空值归一成 starrocks，与 StarRocksSqlExecutor 的 @ConditionalOnProperty(matchIfMissing=true) 对齐。
+        // 否则「不写 type」时条件会装 StarRocks、这里却抛「type= 不受支持」，两套默认值互相矛盾
+        // （QA-07 P2-2）。yml 里删掉那行不该变成启动失败。
+        String raw = engine.getType();
+        String type = (raw == null || raw.isBlank()) ? "starrocks" : raw.trim().toLowerCase();
         if (!SUPPORTED.contains(type)) {
-            throw new IllegalStateException("datapilot.engine.type=" + engine.getType()
-                    + " 不受支持，可选值：" + SUPPORTED + "（Ticket 07）");
+            throw new IllegalStateException("datapilot.engine.type=" + raw
+                    + " 不受支持，可选值：" + SUPPORTED + "（留空默认 starrocks；Ticket 07）");
         }
         if (engine.getUrl() == null || engine.getUrl().isBlank()) {
             throw new IllegalStateException("datapilot.engine.url 未配置（Ticket 07）");

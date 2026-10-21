@@ -185,18 +185,21 @@ class GateChainTest {
     }
 
     @Test
-    @DisplayName("GateChain：全部通过且三道闸门都带 warning 时合并返回")
+    @DisplayName("GateChain：全部通过且三道闸门都带 warning 时按顺序合并返回")
     void chainMergesMultipleWarnings() {
+        // QA-06c P2-5：DisplayName 一直写「三道」，实际只 stub 了两道。合并逻辑的边界是
+        // 「N 个 warning 用；连接且顺序稳定」，只测两道等于没测「多个以上」（两道用 join 拼也会过）。
         Gate warn1 = stubGate("甲", Gate.Phase.IR, GateResult.okWarning("告警一"));
         Gate warn2 = stubGate("乙", Gate.Phase.IR, GateResult.okWarning("告警二"));
-        GateChain c = new GateChain(List.of(warn1, warn2));
+        Gate warn3 = stubGate("丙", Gate.Phase.IR, GateResult.okWarning("告警三"));
+        GateChain c = new GateChain(List.of(warn1, warn2, warn3));
         AgentContext ctx = ctx(ir("gmv_total"));
 
         GateResult r = c.runPhase(Gate.Phase.IR, ctx);
 
         assertThat(r.isPass()).isTrue();
-        assertThat(r.getWarning()).isEqualTo("告警一；告警二");
-        assertThat(ctx.getGateResults()).containsExactly("甲=PASS(WARN)", "乙=PASS(WARN)");
+        assertThat(r.getWarning()).isEqualTo("告警一；告警二；告警三");
+        assertThat(ctx.getGateResults()).containsExactly("甲=PASS(WARN)", "乙=PASS(WARN)", "丙=PASS(WARN)");
     }
 
     // ---------------- 夹具 ----------------

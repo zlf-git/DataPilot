@@ -65,6 +65,18 @@
 
 ## 修订记录
 
+### v2.12（QA-06c / QA-07 两份评审报告收口：06d + 07b 补丁）
+
+- **QA-06c P1-1 真因是换行符，不是「没重跑 gen」**：`sources` 指纹原来哈希原始字节，Windows 工作区（LF）算出 `6abbf84e…`，评审机 `git archive` 出来是 CRLF 算出 `1eb75d3a…`，于是「开发机 PASS、评审机第一条命令就 FAIL」。两个脚本统一改成「文本读入 + 换行归一 `\n` + 哈希」；验收口径改成**工作区与干净副本都必须绿**。`golden_set.json` 自身 sha256 `655695b5… → ac11b499…`（06a/06b 记录里的旧值是当时事实，不回改）
+- **QA-06c P2-1 防线漏洞**：`sources` 原来只查「登记了的有没有漂移」，删掉一个条目就没人查 → 加 `REQUIRED_SOURCES`，缺任一份来源直接 FAIL（变异 M5 验红）
+- **QA-06c P2-3 全等断言是有意的**：`IrToSqlConverterTest` 用整条 SQL 全等，是为了「生成器输出被顺手格式化也要红」；改成片段断言等于放水。想放宽前先看 06c 票面 06d 段
+- **QA-06c P2-5 修**：`chainMergesMultipleWarnings` 补第三道闸门（两道时 `join` 也能过，测不出「多个」）
+- **QA-07 P2-1 修**：`/api/health/engine` 的 `consistent` 原来只判 `declaredNotInMetadata`，「切到 MySQL 但元数据还指着 4 张 StarRocks 表」这个真实场景会报 `true` → 改双向；新增「declared ⊂ metadata 单向失配」用例（变异 M3 验红）
+- **QA-07 P2-2 修**：`EngineJdbc` 把 `type` 空值归一成 `starrocks`，与 `matchIfMissing=true` 对齐（此前「不写这行」会抛「不受支持」，两套默认值互相矛盾）；`defaultIsStarRocksAndItIsTheOnlyExecutor` 改成真的不传 `type`（变异 M4 验红）
+- **QA-07 P2-4 修**：`SqlCommand` 紧凑构造器把 `params=null` 归一成空列表，NPE 不再留到执行器
+- **QA-07 P2-3 归属写死**：`query(String)`/`readableTables()` 已在用；`isReadable()` 归 Ticket 02 存在性闸门接线；`listTables()` 归 Ticket 16 语义模型巡检（02/16 票面已各加一段交接）
+- 测试 74/74（新增 `SqlCommandTest` 3 + `EngineWhitelistTest` +1）；`run_eval` PASS、`check_golden_set` 双环境 PASS
+
 ### v2.11（Ticket 08 多模型工厂）
 
 - **切模型只改一行**：`datapilot.llm.provider` = `stub`（默认）/ `deepseek` / `qwen`。base-url、模型名、Key 环境变量随 provider 自动切换，`base-url` / `model` / `api-key` 留空取默认值，填了即覆盖（私有化部署、代理网关、换模型版本都不改代码）

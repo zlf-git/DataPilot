@@ -80,7 +80,11 @@ public class EngineWhitelist {
         out.put("effectiveTables", new ArrayList<>(effective));
         out.put("declaredNotInMetadata", new ArrayList<>(declaredNotInMetadata));
         out.put("metadataNotDeclared", new ArrayList<>(metadataNotDeclared));
-        out.put("consistent", declaredNotInMetadata.isEmpty());
+        // consistent 必须双向：任一方向有差集都算失配（QA-07 P2-1）。
+        // 此前只判 declaredNotInMetadata，于是「切到 MySQL 但元数据还指着 4 张 StarRocks 表」
+        // 这个真实切换场景会报 consistent=true —— 运维按它告警就会漏掉，
+        // 随后用户问一句才在 DB 层收到「SQL 执行失败」。
+        out.put("consistent", declaredNotInMetadata.isEmpty() && metadataNotDeclared.isEmpty());
         return out;
     }
 

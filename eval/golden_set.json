@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "ticket": "06a",
-  "generated_at": "2026-10-21T13:48:47+08:00",
+  "generated_at": "2026-10-21T14:31:03+08:00",
   "generator": "eval/gen_golden_set.py",
   "sources": {
     "questions_and_expect_sql": {
@@ -40,7 +40,7 @@
       }
     },
     "row_order_sampling": {
-      "sampled_at": "2026-10-21T13:48:47+08:00",
+      "sampled_at": "2026-10-21T14:31:03+08:00",
       "rounds": 2,
       "stable": [
         1,
@@ -288,11 +288,11 @@
           "sale_cnt_product": 4
         },
         {
-          "product_name": "人体工学椅",
+          "product_name": "机械键盘",
           "sale_cnt_product": 3
         },
         {
-          "product_name": "机械键盘",
+          "product_name": "人体工学椅",
           "sale_cnt_product": 3
         }
       ],
@@ -302,11 +302,11 @@
           "sale_cnt_product": 4
         },
         {
-          "product_name": "人体工学椅",
+          "product_name": "机械键盘",
           "sale_cnt_product": 3
         },
         {
-          "product_name": "机械键盘",
+          "product_name": "人体工学椅",
           "sale_cnt_product": 3
         }
       ],

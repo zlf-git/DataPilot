@@ -57,9 +57,25 @@ class EngineSwitchTest {
                 .withUserConfiguration(EngineJdbc.class, StarRocksSqlExecutor.class, MysqlSqlExecutor.class);
     }
 
+    /**
+     * 缺省场景（QA-07 P2-2 的回归点）：<b>不设</b> {@code datapilot.engine.type}，
+     * 等价于 yml 里删掉那一行 —— 此前这个用例其实显式传了 {@code starrocks}，
+     * 所以「缺省即 starrocks」这条从未被验证，而 {@code EngineJdbc} 拿到空值会抛「不受支持」。
+     */
+    private ApplicationContextRunner defaultRunner() {
+        DatapilotProperties props = new DatapilotProperties();
+        props.getEngine().setType(null);
+        props.getEngine().setUrl(SR_URL);
+        props.getEngine().setUsername("agent_ro");
+        props.getEngine().setPassword("AgentRo@2026");
+        return new ApplicationContextRunner()
+                .withBean("datapilotProperties", DatapilotProperties.class, () -> props)
+                .withUserConfiguration(EngineJdbc.class, StarRocksSqlExecutor.class, MysqlSqlExecutor.class);
+    }
+
     @Test
     void defaultIsStarRocksAndItIsTheOnlyExecutor() {
-        runner("starrocks").run(ctx -> {
+        defaultRunner().run(ctx -> {
             assertThat(ctx).hasNotFailed();
             assertThat(ctx.getBeansOfType(SqlExecutor.class)).hasSize(1);
             SqlExecutor ex = ctx.getBean(SqlExecutor.class);
@@ -117,7 +133,8 @@ class EngineSwitchTest {
             SqlExecutor ex = ctx.getBean(SqlExecutor.class);
             List<Map<String, Object>> rows = ex.query(SqlCommand.of("SELECT COUNT(*) AS cnt FROM orders", List.of()));
             assertThat(rows).hasSize(1);
-            assertThat(rows.get(0)).containsKey("cnt");
+            // 列名与列数都要断言：只判 cnt>=0 时，别名叫错/多带一列都会静默通过（QA-07 P2-5）
+            assertThat(rows.get(0)).hasSize(1).containsKey("cnt");
             // 演示库 orders 是空表也照样算跑通：链路通、方言对、结果结构对
             assertThat(((Number) rows.get(0).get("cnt")).longValue()).isGreaterThanOrEqualTo(0L);
         });

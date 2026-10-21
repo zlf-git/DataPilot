@@ -91,4 +91,24 @@ class EngineWhitelistTest {
         assertThat(strings(r.get("effectiveTables"))).containsExactly("ads_trade_overview_di");
         assertThat(strings(r.get("declaredNotInMetadata"))).isEmpty();
     }
+
+    /**
+     * QA-07 P2-1 的回归点：<b>只有 metadataNotDeclared 非空</b>也要判失配。
+     *
+     * <p>这就是「引擎切到 MySQL、元数据还指着 4 张 StarRocks 表」的真实场景：
+     * 引擎声明的表全都在元数据里（declaredNotInMetadata 为空），但元数据里有一堆当前引擎没有的表。
+     * 修复前 consistent 只看第一个方向，于是这里报 true，运维按它告警会漏掉整个切换残留。
+     */
+    @Test
+    void reportIsInconsistentWhenMetadataHasTablesEngineCannotSee() {
+        EngineWhitelist wl = new EngineWhitelist(
+                engine("mysql", Set.of("orders")),
+                cache("orders", "ads_trade_overview_di", "ads_channel_conversion_di"));
+        Map<String, Object> r = wl.report();
+
+        assertThat(strings(r.get("declaredNotInMetadata"))).isEmpty();
+        assertThat(strings(r.get("metadataNotDeclared")))
+                .containsExactly("ads_channel_conversion_di", "ads_trade_overview_di");
+        assertThat(r.get("consistent")).isEqualTo(false);
+    }
 }
