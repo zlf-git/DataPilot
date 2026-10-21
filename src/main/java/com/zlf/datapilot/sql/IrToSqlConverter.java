@@ -61,8 +61,13 @@ import java.util.stream.Collectors;
 @Component
 public class IrToSqlConverter {
 
-    /** 字段名/别名合法格式：字母或下划线开头，仅字母数字下划线。含空格/等号/分号/引号的一律过不了这关 */
-    private static final Pattern FIELD_NAME = Pattern.compile("^[a-z_][a-z0-9_]*$");
+    /**
+     * 字段名/别名合法格式：字母或下划线开头，仅字母数字下划线。含空格/等号/分号/引号的一律过不了这关。
+     *
+     * <p>大小写不敏感（QA-03 P2-7）：LLM 偶尔吐 {@code Channel_Name} 这种写法，此前直接被判「非法字段名」。
+     * 校验通过后统一按白名单真值（全小写）出 SQL，不会把大写标识符带进 SQL 文本。
+     */
+    private static final Pattern FIELD_NAME = Pattern.compile("^[a-z_][a-z0-9_]*$", Pattern.CASE_INSENSITIVE);
 
     /** 表名合法格式（分母表来自元数据，仍过一遍格式校验，杜绝把 SQL 片段塞进表名） */
     private static final Pattern TABLE_NAME = Pattern.compile("^[a-z_][a-z0-9_]*$");
@@ -130,8 +135,9 @@ public class IrToSqlConverter {
             throw new IllegalArgumentException("AGG 聚合模式必须指定指标（Ticket 03）");
         }
         MetricRef metricRef = ir.getMetrics().get(0);
-        String metricId = metricRef.getMetricId();
-        requireIdentifier(metricId, "metricId");
+        requireIdentifier(metricRef.getMetricId(), "metricId");
+        // 指标 ID 统一小写（metric_def.metric_id 全小写），别名也用同一套真值，避免 ORDER BY 对不上
+        String metricId = metricRef.getMetricId().trim().toLowerCase(java.util.Locale.ROOT);
 
         MetricDef metric = repo.findByMetricId(metricId);
         if (metric == null) {
@@ -147,19 +153,17 @@ public class IrToSqlConverter {
         }
 
         List<DimensionRef> dims = safeDimensions(ir);
+        List<String> dimFields = dims.stream().map(d -> requireField(d.getField(), "维度")).toList();
         // QA-03 P1-2：维度/过滤字段必须属于指标表。此前只校验「字段存在于白名单」，
         // 跨表维度（gmv_total + channel_name）五闸门全 PASS，最后 DB 才报错并把异常原文漏给用户。
-        assertFieldsOnTable(tableName, dims.stream().map(DimensionRef::getField).toList(), "维度");
+        assertFieldsOnTable(tableName, dimFields, "维度");
         assertFieldsOnTable(tableName, filterFields(ir), "过滤");
 
         // 时间窗口只解一次（anchor 取主表 MAX(dt)），分母子查询复用同一组条件与参数
         TimeClause time = resolveTimeClause(ir, tableName);
 
         List<Object> params = new ArrayList<>();
-        List<String> selectItems = new ArrayList<>();
-        for (DimensionRef d : dims) {
-            selectItems.add(requireField(d.getField(), "维度"));
-        }
+        List<String> selectItems = new ArrayList<>(dimFields);
         String metricExpr = isComposite(metric)
                 ? buildCompositeExpr(metric, ir, tableName, time, params)
                 : metricSql;
@@ -170,17 +174,15 @@ public class IrToSqlConverter {
                 .append(String.join(", ", selectItems))
                 .append(" FROM ").append(tableName)
                 .append(where.render());
-        if (!dims.isEmpty()) {
-            sql.append(" GROUP BY ").append(dims.stream()
-                    .map(DimensionRef::getField)
-                    .collect(Collectors.joining(", ")));
+        if (!dimFields.isEmpty()) {
+            sql.append(" GROUP BY ").append(String.join(", ", dimFields));
         }
 
         // 排序允许集：分组维度字段 + 本 IR 的指标别名（ORDER BY 别名是聚合查询的标准写法）
-        Set<String> sortable = new LinkedHashSet<>();
-        dims.forEach(d -> sortable.add(d.getField()));
+        Set<String> sortable = new LinkedHashSet<>(dimFields);
         sortable.add(metricId);
-        appendOrderBy(sql, ir.getOrderBy(), sortable);
+        // 维度字段作 tie-breaker：Q6 这类「转化率并列」的场景单键排序行序不稳定，06b 无从对拍（QA-03 P2-3）
+        appendOrderBy(sql, ir.getOrderBy(), sortable, dimFields);
         appendLimit(sql, ir);
 
         // 分母参数已在 buildCompositeExpr 内先压入（子查询文本在 WHERE 之前），主查询参数随后
@@ -317,7 +319,7 @@ public class IrToSqlConverter {
             throw new IllegalArgumentException(role + "口径非法：" + aggSql
                     + "（只允许 SUM/COUNT/AVG/MAX/MIN(字段) 或 COUNT(*)，Ticket 05）");
         }
-        String field = m.group(2);
+        String field = m.group(2).toLowerCase(java.util.Locale.ROOT);
         if ("*".equals(field)) {
             return;
         }
@@ -327,13 +329,14 @@ public class IrToSqlConverter {
         }
     }
 
-    /** 维度/过滤字段的表归属校验（QA-03 P1-2） */
+    /** 维度/过滤字段的表归属校验（QA-03 P1-2）。字段名先归一成小写再查 table.field 复合键 */
     private void assertFieldsOnTable(String table, Collection<String> fields, String role) {
         for (String f : fields) {
             if (f == null) {
                 continue;
             }
-            if (!cache.tableFields().contains(table + "." + f)) {
+            String nf = f.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!cache.tableFields().contains(table + "." + nf)) {
                 throw new IllegalArgumentException(role + "字段 " + f + " 不属于表 " + table
                         + "（Ontology 字段白名单按表隔离，跨表维度请拆成两次查询）");
             }
@@ -358,13 +361,9 @@ public class IrToSqlConverter {
         }
 
         String tableName = resolveDetailTable(ir, dims);
-        assertFieldsOnTable(tableName, dims.stream().map(DimensionRef::getField).toList(), "维度");
+        List<String> columns = dims.stream().map(d -> requireField(d.getField(), "维度")).toList();
+        assertFieldsOnTable(tableName, columns, "维度");
         assertFieldsOnTable(tableName, filterFields(ir), "过滤");
-
-        List<String> columns = new ArrayList<>();
-        for (DimensionRef d : dims) {
-            columns.add(requireField(d.getField(), "维度"));
-        }
 
         WhereClause where = buildWhere(ir, resolveTimeClause(ir, tableName));
         StringBuilder sql = new StringBuilder("SELECT DISTINCT ")
@@ -373,7 +372,8 @@ public class IrToSqlConverter {
                 .append(where.render());
 
         // DISTINCT 语义下只能按结果列排序（按未选中的列排序在多数引擎直接报错，且语义不明）
-        appendOrderBy(sql, ir.getOrderBy(), new LinkedHashSet<>(columns));
+        // 未给 orderBy 时按维度升序兜底：DISTINCT 天然无序，Q4/Q5 两轮实测行序不同，06b 无法对拍（QA-03 P2-2）
+        appendOrderBy(sql, ir.getOrderBy(), new LinkedHashSet<>(columns), columns);
         appendLimit(sql, ir);
 
         return SqlCommand.of(sql.toString(), where.params());
@@ -388,14 +388,16 @@ public class IrToSqlConverter {
         Map<String, Set<String>> dict = cache.dimensionTables();
         Set<String> knownFields = new LinkedHashSet<>();
         for (DimensionRef d : dims) {
-            if (d.getField() != null && dict.containsKey(d.getField())) {
-                knownFields.add(d.getField());
+            String f = lower(d.getField());
+            if (f != null && dict.containsKey(f)) {
+                knownFields.add(f);
             }
         }
         List<Filter> filters = ir.getFilters() == null ? List.of() : ir.getFilters();
         for (Filter f : filters) {
-            if (f.getField() != null && dict.containsKey(f.getField())) {
-                knownFields.add(f.getField());
+            String nf = lower(f.getField());
+            if (nf != null && dict.containsKey(nf)) {
+                knownFields.add(nf);
             }
         }
         if (knownFields.isEmpty()) {
@@ -417,9 +419,14 @@ public class IrToSqlConverter {
                     + " 在维度字典中没有共同所属的表（Ticket 03）");
         }
         if (candidates.size() > 1) {
+            // 只给了 dt 时给出可执行的下一步：dt 在 4 张 ADS 表都有，天然歧义
+            boolean dtOnly = knownFields.size() == 1 && knownFields.contains(DT_FIELD);
+            String hint = dtOnly
+                    ? "；只按日期查明细会跨 " + candidates.size() + " 张表，请再补一个渠道/地域/商品维度或指定指标"
+                    : "，请补充更具体的维度";
             throw new IllegalArgumentException("无法确定目标表：维度 " + knownFields
                     + " 对应多张候选表 " + candidates.stream().sorted().toList()
-                    + "，请补充更具体的维度（Ticket 03）");
+                    + hint + "（Ticket 03）");
         }
         return candidates.iterator().next();
     }
@@ -527,7 +534,7 @@ public class IrToSqlConverter {
                 return field + " = ?";
             }
             case IN -> {
-                List<Object> values = toList(f.getValue());
+                List<Object> values = toList(field, f.getValue());
                 if (values.isEmpty()) {
                     throw new IllegalArgumentException("IN 过滤值不能为空：" + field);
                 }
@@ -558,21 +565,36 @@ public class IrToSqlConverter {
         }
     }
 
-    private void appendOrderBy(StringBuilder sql, List<OrderBy> orderBy, Set<String> sortable) {
-        if (orderBy == null || orderBy.isEmpty()) {
-            return;
-        }
+    /**
+     * 排序子句 = 显式 orderBy（校验字段在结果列内）+ 维度 tie-breaker（升序追加，已出现的不重复）。
+     *
+     * <p>tie-breaker 只为「结果确定」：无排序的 AGG/ DISTINCT 明细、以及排序键并列时（Q6 两个 1.0），
+     * 引擎返回行序不保证稳定，同一 SQL 两轮跑出不同顺序会让 06b 的对拍随机失败。
+     * 加维度升序不改变任何一行的取值，只在并列时给出唯一顺序。
+     */
+    private void appendOrderBy(StringBuilder sql, List<OrderBy> orderBy, Set<String> sortable,
+                               Collection<String> tieBreakers) {
         List<String> parts = new ArrayList<>();
-        for (OrderBy o : orderBy) {
+        Set<String> used = new LinkedHashSet<>();
+        for (OrderBy o : orderBy == null ? List.<OrderBy>of() : orderBy) {
             String field = requireField(o.getField(), "排序");
             if (!sortable.contains(field)) {
                 throw new IllegalArgumentException("排序字段 " + field + " 不在结果列 " + sortable
                         + " 内（Ticket 05：需要对应的聚合指标，如 sale_cnt_product）");
             }
             String dir = "desc".equalsIgnoreCase(o.getDirection()) ? "DESC" : "ASC";
-            parts.add(field + " " + dir);
+            if (used.add(field)) {
+                parts.add(field + " " + dir);
+            }
         }
-        sql.append(" ORDER BY ").append(String.join(", ", parts));
+        for (String t : tieBreakers) {
+            if (t != null && used.add(t)) {
+                parts.add(t + " ASC");
+            }
+        }
+        if (!parts.isEmpty()) {
+            sql.append(" ORDER BY ").append(String.join(", ", parts));
+        }
     }
 
     /** limit 空时注入 gate_config.max_rows（Ticket 03 任务 5）；limit 是整型常量，无注入面 */
@@ -586,10 +608,10 @@ public class IrToSqlConverter {
         sql.append(" LIMIT ").append(limit);
     }
 
-    /** 字段名格式校验：即使上游闸门被绕过，含空格/等号/分号/引号的注入串也进不了 SQL */
+    /** 字段名格式校验：即使上游闸门被绕过，含空格/等号/分号/引号的注入串也进不了 SQL。通过后统一小写（白名单真值） */
     private String requireField(String field, String role) {
         requireIdentifier(field, role + "字段");
-        return field;
+        return field.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private void requireIdentifier(String name, String role) {
@@ -614,23 +636,32 @@ public class IrToSqlConverter {
         return s == null ? "" : s.trim();
     }
 
-    private static List<Object> toList(Object value) {
+    /**
+     * IN 的多值来源：JSON 数组 / 集合 / Java 数组。
+     *
+     * <p>字符串<b>不再按逗号切分</b>（QA-03 P2-7）：值本身就可能是「上海,浙江」这种含逗号的单个值，
+     * 硬切会把一个值拆成两个、语义静默改变。含逗号直接拒绝并要求改传 JSON 数组，
+     * 不含逗号当作单值 IN —— 两种情况都不会猜。
+     */
+    private static List<Object> toList(String field, Object value) {
         if (value instanceof Collection<?> c) {
             return new ArrayList<>(c);
         }
         if (value instanceof String s) {
-            List<Object> list = new ArrayList<>();
-            for (String part : s.split(",")) {
-                if (!part.isBlank()) {
-                    list.add(part.trim());
-                }
+            if (s.contains(",")) {
+                throw new IllegalArgumentException("IN 过滤值含逗号（" + field + "）：字符串不再按逗号切分，"
+                        + "多值请改传 JSON 数组；单个值本身就含逗号时会切错");
             }
-            return list;
+            return s.isBlank() ? List.of() : List.of(s.trim());
         }
         if (value.getClass().isArray()) {
             Object[] arr = (Object[]) value;
             return new ArrayList<>(List.of(arr));
         }
         return List.of(value);
+    }
+
+    private static String lower(String s) {
+        return s == null ? null : s.trim().toLowerCase(java.util.Locale.ROOT);
     }
 }

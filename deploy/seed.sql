@@ -106,21 +106,30 @@ INSERT IGNORE INTO metric_table (metric_id, table_name) VALUES
 -- B6：日期维度 dt 一对多——dt 在 4 张 ADS 表都有，不绑定单一表，避免含 dt 过滤的题被「维度越界」误拦
 INSERT IGNORE INTO dimension_def (dim_name, field_name, table_name, dim_type, enum_values) VALUES
 ('渠道','channel_name','ads_channel_conversion_di','enum','["APP","小程序","网页"]'),
+('渠道编码','channel','ads_channel_conversion_di','enum','["app","miniapp","web"]'),
 ('大区','region','ads_region_gmv_di','enum','["华东","华北","华南"]'),
 ('省份','province_name','ads_region_gmv_di','enum','["江苏","上海","浙江","北京","广东"]'),
+('省份编码','province','ads_region_gmv_di','enum','["JS","SH","ZJ","BJ","GD"]'),
 ('类目','category_name','ads_product_sales_rank_di','enum','["办公家具","电脑外设"]'),
 ('商品','product_name','ads_product_sales_rank_di','enum','["机械键盘","4K显示器","人体工学椅"]'),
+('商品编码','product_id','ads_product_sales_rank_di','enum',NULL),
 ('日期','dt','ads_trade_overview_di','time',NULL),
 ('日期','dt','ads_channel_conversion_di','time',NULL),
 ('日期','dt','ads_region_gmv_di','time',NULL),
 ('日期','dt','ads_product_sales_rank_di','time',NULL);
 
 -- 6. 闸门配置（代价/结果自检默认阈值）
+-- max_metric / max_join 按生成器当前真实能力配：单指标、单表（多指标在 Ticket 05 已明确不支持）。
+-- 配成 3/2 会让阈值永远不可达 → 成了死配置，问题全部漏到生成器才报（QA-03 P2-5）。
+-- 等 Ticket 05 落多指标、Ticket 15 落多表 join 时再调回 3/2。
 INSERT IGNORE INTO gate_config (gate_name, param_key, param_value, updated_by) VALUES
-('cost','max_join','2','数据开发'),
-('cost','max_metric','3','数据开发'),
+('cost','max_join','1','数据开发'),
+('cost','max_metric','1','数据开发'),
 ('cost','max_limit','1000','数据开发'),
 ('result','max_rows','1000','数据开发');
+-- INSERT IGNORE 不更新既有行，显式 UPDATE 保证 seed 可重复执行
+UPDATE gate_config SET param_value = '1' WHERE param_key = 'max_join';
+UPDATE gate_config SET param_value = '1' WHERE param_key = 'max_metric';
 
 -- 7. few-shot 示例（Ticket 03 任务 8：日期归一化，只说月日也要补年份）
 -- few_shot_example 无唯一键，用 NOT EXISTS 保证 seed 可重复执行不重复插

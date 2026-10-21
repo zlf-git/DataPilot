@@ -59,7 +59,7 @@
   "selectMode": "AGG | DETAIL",
   "metrics": [ { "metricId": "指标ID" } ],
   "dimensions": [ { "field": "字段名" } ],
-  "filters": [ { "field": "字段名", "op": "EQ|IN|LIKE|GT|GE|LT|LE", "value": "值" } ],
+  "filters": [ { "field": "字段名", "op": "EQ|IN|LIKE|GT|GE|LT|LE", "value": "值；op=IN 时必须是 JSON 数组" } ],
   "orderBy": [ { "field": "指标ID或字段名", "direction": "ASC|DESC" } ],
   "limit": 数字或 null,
   "timeRange": { "relativeWindow": "LAST_N_DAYS", "days": 7 }
@@ -67,6 +67,8 @@
 
 > IR 里**不带表名**（表由 metric_def / dimension_def 派生），也**不填 `ratio`**（Ticket 05 停用，占比走复合指标）。
 > `selectMode`：AGG=要聚合值（金额/数量/比例/最高最低）；DETAIL=要清单（「有哪些」「列出」）。
+> `IN` 的值必须是 JSON 数组（`["APP","小程序"]`）；写逗号串会被生成器显式拒绝（值本身可能含逗号，切了就错）。
+> 字段名大小写不敏感，但请照抄指标清单/字段清单里的原样写法。
 
 ## 约束规则
 1. 只能使用上述表和字段，禁止编造任何表名、字段名。

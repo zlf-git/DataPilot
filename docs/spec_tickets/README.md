@@ -65,6 +65,16 @@
 
 ## 修订记录
 
+### v2.5（QA-03 报告余项收口，05b 补丁）
+
+- **契约变化 1**：`op=IN` 的 value 只认 JSON 数组，逗号串显式拒绝（值本身可能含逗号，硬切会静默改语义）；Prompt 同步约束
+- **契约变化 2**：AGG/DETAIL 一律带 `ORDER BY` —— 显式排序后追加未出现的分组维度 ASC 做 tie-breaker，DETAIL 无 orderBy 时按 SELECT 列升序兜底。目的只是「同一环境两轮结果一致」，06b 仍按集合比对
+- **契约变化 3**：字段名 / metricId 大小写不敏感，统一按白名单真值（小写）出 SQL
+- 代价闸门阈值按生成器真实能力收口：`max_metric=1`、`max_join=1`（原 3/2 永远不可达，等于关闸门），多指标落地后调回
+- `dimension_def` 补 `channel` / `province` / `product_id` → 12 行 / 9 唯一字段；dt 单维度 DETAIL 的拒绝文案给出可执行下一步
+- stub 匹配：多条部分匹配（双意向拼接）判「无法识别」，不再静默只答第一问
+- `qa/e2e_stub.py` 新增「期望表版本」打印 + 反例回归段（空白 ×3 / 未命中 / 双意向 / 跨表维度）+ 行序稳定性段；新增常驻反例桩 `neg_cross_table.json`
+
 ### v2.4（Ticket 05 落地后回填）
 
 - 05 口径裁定：`pay_conversion_rate` = `SUM(paid_order_cnt)/SUM(visit_uv)`（与 ADS 表内既有列同口径 0.1/0.1/0.075），**取代 v2.3 写的 `SUM(paid_order_cnt)/SUM(order_cnt)`**——后者与 `pay_rate`（订单→支付）口径重复，且与评测集 Q6 期望值不符

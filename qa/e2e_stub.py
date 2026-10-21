@@ -16,15 +16,38 @@ Ticket 01c/03 端到端验收（诚实版）。
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 from datetime import datetime
 
 HOST = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:18080'
 URL = HOST + '/api/ask'
-EXPECT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'eval_expectations.json')
+HERE = os.path.dirname(os.path.abspath(__file__))
+EXPECT_FILE = os.path.join(HERE, 'eval_expectations.json')
+REPO = os.path.dirname(HERE)
 
 TOL = 0.011
+
+
+def expectation_version():
+    """期望表版本（QA-03 环境事故的教训）：期望表会被后续票改动，用 HEAD 版本评旧 commit 会误报静默错。
+    这里把「被测代码 commit + 期望表内容指纹」都打出来，报告可核对。"""
+    def git(*args):
+        try:
+            return subprocess.run(['git', '-C', REPO] + list(args), capture_output=True,
+                                  text=True, timeout=10).stdout.strip()
+        except Exception as e:  # noqa: BLE001
+            return '<%s>' % e
+    head = git('log', '-1', '--oneline')
+    dirty = len([l for l in git('status', '--porcelain').splitlines() if l.strip()])
+    import hashlib
+    with open(EXPECT_FILE, 'rb') as fp:
+        raw = fp.read()
+    digest = hashlib.sha256(raw).hexdigest()[:12]
+    return '期望表 %s（sha256:%s，%d 字节） | 被测代码 %s%s' % (
+        os.path.basename(EXPECT_FILE), digest, len(raw), head or '<非 git 环境>',
+        '（工作区有 %d 处未提交改动）' % dirty if dirty else '')
 
 
 def ask(question):
@@ -98,6 +121,8 @@ def main():
     with open(EXPECT_FILE, encoding='utf-8') as fp:
         expect = json.load(fp)['items']
 
+    print('== 版本 ==')
+    print('  ' + expectation_version())
     print('== 15 题逐题判定（执行 + SQL 形状 + 值对拍 + 归因）==')
     print('  %-3s %-6s %-16s %-12s %s' % ('#', 'IR', '判定', '归因', '说明'))
     st = {'ok': 0, 'reject': 0, 'silent': 0, 'bug': 0, 'mismatch': 0,
@@ -211,20 +236,50 @@ def main():
             print('  ERR %-14s %s -> %s' % (desc, q, e))
     print('  变体可用 %d/%d（判据同样要求「执行 + 值对」）' % (vok, len(variants)))
 
-    print('\n== 未命中兜底 ==')
-    r = ask('今天天气怎么样')
-    ir = r.get('ir') or {}
-    ok_fb = (not (ir.get('metrics') or ir.get('dimensions'))) and not (r.get('sql') or '').strip() \
-        and (r.get('answer') or '').strip()
-    print('  %s ir=%s/%s sql=%r answer=%r' % (
-        'OK  ' if ok_fb else 'FAIL',
-        ir.get('metrics'), ir.get('dimensions'),
-        (r.get('sql') or '')[:20], r.get('answer')))
+    print('\n== 反例回归（QA-03 P1-1/P1-2/P2-1：必须显式拒绝，不能执行出数）==')
+    neg_cases = [
+        ('空白-空串', '', '问题为空'),
+        ('空白-空格', ' ', '问题为空'),
+        ('空白-换行', '\n', '问题为空'),
+        ('未命中', '今天天气怎么样', '无法识别'),
+        ('双意向拼接', '10月19日当天的总GMV是多少？另外华东地区有哪些省份', '无法识别'),
+        ('跨表维度', '反例：按渠道名称看总GMV', '不属于表'),
+    ]
+    neg_fail = 0
+    for desc, q, want in neg_cases:
+        try:
+            r = ask(q)
+            sql = (r.get('sql') or '').strip()
+            answer = (r.get('answer') or '').strip()
+            ok = (not sql) and bool(answer) and (want in answer)
+            neg_fail += 0 if ok else 1
+            print('  %s %-12s sql=%r answer=%r' % (
+                'OK  ' if ok else 'FAIL', desc, sql[:26], answer[:60]))
+        except Exception as e:  # noqa: BLE001
+            neg_fail += 1
+            print('  FAIL %-12s 异常 %s' % (desc, e))
+
+    print('\n== 行序稳定性（同一问题连跑两轮，行序必须一致）==')
+    stable_fail = 0
+    for desc, q in [('Q4 DETAIL', '华东地区有哪些省份？'),
+                    ('Q5 DETAIL', '电脑外设类目下有哪些商品？'),
+                    ('Q6 并列排序', '10月19日各渠道的支付转化率分别是多少？按转化率从高到低排序。')]:
+        try:
+            a = [json.dumps(x, ensure_ascii=False, sort_keys=True) for x in (ask(q).get('rows') or [])]
+            b = [json.dumps(x, ensure_ascii=False, sort_keys=True) for x in (ask(q).get('rows') or [])]
+            ok = a == b and bool(a)
+            stable_fail += 0 if ok else 1
+            print('  %s %-12s %s' % ('OK  ' if ok else 'FAIL', desc, a[:4]))
+        except Exception as e:  # noqa: BLE001
+            stable_fail += 1
+            print('  FAIL %-12s 异常 %s' % (desc, e))
 
     ok_final = (st['silent'] == 0 and st['bug'] == 0 and st['bad'] == 0
-                and vok == len(variants) and ok_fb)
-    print('\nCONCLUSION: %s（可用 %d/15，答对 %d，静默错 %d，显式拒绝 %d，口径待定 %d）' % (
-        'PASS' if ok_final else 'FAIL', st['exec'], st['ok'], st['silent'], st['reject'], st['mismatch']))
+                and vok == len(variants) and neg_fail == 0 and stable_fail == 0)
+    print('\nCONCLUSION: %s（可用 %d/15，答对 %d，静默错 %d，显式拒绝 %d，口径待定 %d，'
+          '反例不符 %d，行序不稳 %d）' % (
+              'PASS' if ok_final else 'FAIL', st['exec'], st['ok'], st['silent'], st['reject'],
+              st['mismatch'], neg_fail, stable_fail))
     sys.exit(0 if ok_final else 1)
 
 

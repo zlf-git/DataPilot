@@ -71,22 +71,49 @@ public class StubLlmClient implements LlmClient {
             // prompt 里还有指标清单/DDL/few-shot，few-shot 的示例问题会和真问题撞车
             // （Ticket 03 踩过：注入的 few-shot 就是 Q1 原题，导致所有问题都命中 Q1）。
             String normPrompt = normalize(extractQuestion(userPrompt));
-            for (StubEntry e : entries) {
-                if (!e.normalizedQuestion.isEmpty() && normPrompt.contains(e.normalizedQuestion)) {
-                    // 部分匹配（prompt 比 stub 题面长）：可能是寒暄包裹，也可能是双意向拼接。
-                    // 记 debug 便于 06b 造变体集时排查「第二个问题被静默丢弃」。
-                    if (!normPrompt.equals(e.normalizedQuestion)) {
-                        log.debug("stub 部分匹配：命中「{}」，prompt 归一化后长度 {} > {}",
-                                e.getQuestion(), normPrompt.length(), e.normalizedQuestion.length());
-                    }
-                    g.setIr(deepCopy(e.getIr()));
-                    return g;
-                }
+            StubEntry picked = match(normPrompt);
+            if (picked != null) {
+                g.setIr(deepCopy(picked.getIr()));
+                return g;
             }
         }
-        // 未命中任何 stub：返回空 IR（metrics 为空），由 AgentEngine 报「无法识别查询意图」
+        // 未命中（或命中多题 = 多意向拼接，桩拆不开）：返回空 IR，
+        // 由 AgentEngine 统一报「无法识别查询意图」，绝不猜一个答 —— QA-03 P2-1
         g.setIr(new QueryIr());
         return g;
+    }
+
+    /**
+     * 匹配策略（QA-03 P2-1）：精确优先，其次唯一部分匹配；部分匹配到<b>多条</b>说明用户把两个问题拼在一起问了
+     * （「近7天GMV最高的渠道是哪个？另外10月19日总GMV是多少」），此前会静默只答第一题、第二题彻底消失。
+     * 桩没有拆句能力，这里显式放弃（走「无法识别」），把「不能静默丢问题」这条约束钉住。
+     */
+    private StubEntry match(String normPrompt) {
+        if (normPrompt.isEmpty()) {
+            return null;
+        }
+        List<StubEntry> partial = new ArrayList<>();
+        for (StubEntry e : entries) {
+            if (e.normalizedQuestion.isEmpty()) {
+                continue;
+            }
+            if (normPrompt.equals(e.normalizedQuestion)) {
+                return e;
+            }
+            if (normPrompt.contains(e.normalizedQuestion)) {
+                partial.add(e);
+            }
+        }
+        if (partial.size() == 1) {
+            log.debug("stub 部分匹配：命中「{}」，prompt 归一化后长度 {} > {}",
+                    partial.get(0).getQuestion(), normPrompt.length(), partial.get(0).normalizedQuestion.length());
+            return partial.get(0);
+        }
+        if (partial.size() > 1) {
+            log.warn("提问疑似包含 {} 个意图（命中 {}），桩无法拆句，按「无法识别」处理，请一次只问一个问题",
+                    partial.size(), partial.stream().map(StubEntry::getQuestion).toList());
+        }
+        return null;
     }
 
     /**

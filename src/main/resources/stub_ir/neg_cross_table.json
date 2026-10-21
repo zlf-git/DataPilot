@@ -1,0 +1,24 @@
+{
+  "question": "反例：按渠道名称看总GMV",
+  "ir": {
+    "question": "反例：按渠道名称看总GMV",
+    "selectMode": "AGG",
+    "metrics": [
+      {
+        "metricId": "gmv_total"
+      }
+    ],
+    "dimensions": [
+      {
+        "field": "channel_name"
+      }
+    ],
+    "filters": [
+      {
+        "field": "dt",
+        "op": "EQ",
+        "value": "2026-10-19"
+      }
+    ]
+  }
+}

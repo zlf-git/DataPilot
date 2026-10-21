@@ -56,6 +56,7 @@ public class PromptBuildStep implements AgentStep {
                 - metrics：指标 metricId 数组。AGG 必填；DETAIL 必须为空
                 - dimensions：维度字段数组。DETAIL 必填；AGG 里非空表示「按该维度分组」
                 - filters：{field, op, value}，op 只能是 EQ/IN/LIKE/GT/GE/LT/LE（禁止 BETWEEN）
+                  op=IN 时 value 必须是 JSON 数组（如 ["APP","小程序"]），不要写逗号串
                 - timeRange：只用于「近 N 天 / 最近 N 天」这类相对窗口，格式 {relativeWindow:"LAST_N_DAYS", days:N}。
                   具体起止日期由系统按数据最新日推算，你不要自己算日期、不要填 anchor，
                   也不要在 filters 里再写 dt 条件（两者只能二选一）

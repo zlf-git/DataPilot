@@ -187,3 +187,26 @@ Ticket 04 的开发在本次测试进行中落盘并提交：`TimeRange.java` �
 
 **测试脚本**（可复跑，改 `BASE`/`EXP_PATH` 即可）：
 `C:\Users\zlf\WorkBuddy\2026-10-18-18-31-24\qa\probe_03_e2e.py`、`probe_03_edge.py`、`inject_03_stubs.py`
+
+---
+
+## 7. 修复追踪（PM 回填，2026-10-21，commit 见 git log）
+
+被测版本 `9e1f4be` 的缺陷在 `992a221`（Ticket 05）与随后的 05b 补丁中处理。复测请以「被测 commit + 期望表 sha256」成对核对（`qa/e2e_stub.py` 开头已打印）。
+
+| 条目 | 状态 | 修复位置 | 复验方式 |
+|---|---|---|---|
+| P1-1 空白问题返回 Q1 数据 | ✅ 已修 | `StubLlmClient.extractQuestion` 空白返回空串；`AgentEngine.run` 入口 blank 短路 | `e2e_stub.py` 反例段「空白-空串/空格/换行」→ `sql=''`、`answer='问题为空，请描述你要查什么'` |
+| P1-2 跨表维度穿到 DB + 异常原文外泄 | ✅ 已修 | `IrToSqlConverter.assertFieldsOnTable`（用 `cache.tableFields()` 做 `table.field` 作用域校验）；`SqlExecuteStep` 只回 traceId 文案 | 反例桩 `neg_cross_table.json` → 「维度字段 channel_name 不属于表 ads_trade_overview_di」；`e2e_stub.py` 反例段「跨表维度」 |
+| P2-1 双意向拼接静默只取一个 | ✅ 已修 | `StubLlmClient.match()`：多条部分匹配 → 无法识别 + warn | 反例段「双意向拼接」→ `无法识别查询意图，请换个问法` |
+| P2-2 DETAIL 行序不稳定 | ✅ 已修 | `appendOrderBy` 的 tieBreakers | 行序稳定性段 Q4/Q5 连跑两轮一致（上海/江苏/浙江、4K显示器/机械键盘） |
+| P2-3 Q6 并列排序不稳定 | ✅ 已修 | 同上（AGG 追加维度 ASC） | 行序稳定性段 Q6 两轮一致；即使 IR 只给单键排序也稳定 |
+| P2-4 维度字典 6/28、dt 恒歧义 | ◑ 部分（按设计） | `V05b` 迁移补 `channel`/`province`/`product_id` → 12 行 / 9 唯一字段；dt 单维度拒绝文案给下一步 | `SELECT COUNT(*) FROM dimension_def` = 12；「按日期查明细测试」→「只按日期查明细会跨 4 张表，请再补一个渠道/地域/商品维度或指定指标」。**剩余度量字段按定义不入维度字典**，DETAIL 维度面交 Ticket 16 |
+| P2-5 max_metric/max_join 不可达 | ✅ 已修 | `seed.sql` + `V05b`：`max_metric=1`、`max_join=1` | 2 指标 → 代价闸门拒绝「指标数 2 > 1」 |
+| P2-6 IR_Schema §2 与代码不一致 | ✅ 已修（05） | `IR_Schema.md` §2 record 定义重写 | 人工比对 `QueryIr.java` |
+| P2-7 字段正则大小写 + IN 逗号硬切 | ✅ 已修 | `FIELD_NAME` 加 CASE_INSENSITIVE + 统一小写出 SQL（`IrToSqlConverter`、`ExistenceGate`）；IN 只认数组 | 「大写字段测试」→ `SELECT channel_name, ... WHERE dt = ?`；「IN逗号串测试」→ 显式拒绝；「IN数组测试」→ `IN (?, ?)` 2 参数 |
+| 建议：期望表版本可核对 | ✅ 已落地 | `qa/e2e_stub.py` 打印期望表 sha256 + 被测 commit + 未提交改动数 | 脚本首段「== 版本 ==」 |
+
+**复测口径补充（本票发现的环境事故）**：`git archive <commit>` 导出固定副本仍是唯一可靠办法；`target/classes` 会被并行开工的下一票覆盖，脚本里打印的 commit 只能证明工作区来源，不能证明跑的是那份字节码 —— 建议复测时在 18088 类独立端口用固定副本，并在报告里写明端口。
+
+**未闭环、已知并有意保留**：`ratio` 字段仍存在于 `QueryIr`（已停用，遇即拒绝），保留是为了让旧 IR 得到「请改用复合指标」的明确指引而不是反序列化失败。
