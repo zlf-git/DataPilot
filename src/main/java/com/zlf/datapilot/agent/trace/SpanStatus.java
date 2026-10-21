@@ -12,7 +12,16 @@ public enum SpanStatus {
     /** 未执行到（本票不落 SKIPPED 行，留给 Ticket 12 的 HITL 分支） */
     SKIPPED,
 
-    /** 闸门要求重规划（保留值，供后续版本使用） */
+    /**
+     * 只校验未执行（Ticket 12）：{@code hitl_preview} 专用。
+     *
+     * <p>它不是 {@code span_type}，是<b>状态</b> —— 票面写得很明确「PREVIEW 是 status 不是 span_type」。
+     * 落成 SUCCESS 会让「执行过的步骤数」虚高（预览这一步一条 SQL 都没发），
+     * 落成 FAILED 又会把它算进错误率，所以单独一个值。
+     */
+    PREVIEW,
+
+    /** 闸门要求重规划（Ticket 12 起真正启用：预览后的编辑越界，需回去重新问） */
     REPLAN;
 
     public static SpanStatus of(boolean failed) {

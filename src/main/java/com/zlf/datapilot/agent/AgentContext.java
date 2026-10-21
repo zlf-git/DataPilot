@@ -1,5 +1,6 @@
 package com.zlf.datapilot.agent;
 
+import com.zlf.datapilot.agent.trace.RunStatus;
 import com.zlf.datapilot.ir.QueryIr;
 import com.zlf.datapilot.knowledge.model.RecalledMetadata;
 import com.zlf.datapilot.sql.SqlCommand;
@@ -92,6 +93,31 @@ public class AgentContext {
 
     /** 环比的文字结论：前 N 天无数据 / 前 N 天的值 */
     private String comparisonNote;
+
+    /**
+     * 预览 ID（Ticket 12）：非空表示这次运行是「只校验不执行」的预览，值是服务端快照的键。
+     *
+     * <p>写入方只有一个：{@code AgentEngine.preview()}，在四道闸门全过后由 {@code PreviewStore.save} 产出。
+     */
+    private String previewId;
+
+    /**
+     * 运行结论的显式覆写（Ticket 12）：只有 HITL 两条路径写。
+     *
+     * <p>{@link RunStatus#of} 的推导规则（闸门里有 REJECT → REJECTED，有错 → FAILED）对普通问数够用，
+     * 但覆盖不到两种情形：<b>预览</b>（四条闸门全过、没有任何错误，按推导会是 SUCCESS，
+     * 可它根本没执行）和 <b>编辑越界</b>（一个闸门都没跑、按推导会是 FAILED，可它不是故障而是策略拒绝）。
+     *
+     * <p>写入方唯一，所以不违反「每个字段一个写入方」——非 HITL 路径读到的恒为 null，
+     * 行为与 Ticket 11 及之前完全一致。
+     */
+    private RunStatus runStatus;
+
+    /** 本次编辑被接受的调整项（Ticket 12，来自 {@code IrEditGuard} 的 allowed 列表，回显给人看） */
+    private List<String> editAllowed = new ArrayList<>();
+
+    /** 本次编辑越界之处（Ticket 12，来自 {@code IrEditGuard} 的 structural 列表；非空即 REPLAN） */
+    private List<String> structuralChanges = new ArrayList<>();
 
     public List<String> getGateResults() {
         return gateResults;
@@ -291,5 +317,37 @@ public class AgentContext {
 
     public void setComparisonNote(String comparisonNote) {
         this.comparisonNote = comparisonNote;
+    }
+
+    public String getPreviewId() {
+        return previewId;
+    }
+
+    public void setPreviewId(String previewId) {
+        this.previewId = previewId;
+    }
+
+    public RunStatus getRunStatus() {
+        return runStatus;
+    }
+
+    public void setRunStatus(RunStatus runStatus) {
+        this.runStatus = runStatus;
+    }
+
+    public List<String> getEditAllowed() {
+        return editAllowed;
+    }
+
+    public void setEditAllowed(List<String> editAllowed) {
+        this.editAllowed = editAllowed == null ? new ArrayList<>() : editAllowed;
+    }
+
+    public List<String> getStructuralChanges() {
+        return structuralChanges;
+    }
+
+    public void setStructuralChanges(List<String> structuralChanges) {
+        this.structuralChanges = structuralChanges == null ? new ArrayList<>() : structuralChanges;
     }
 }

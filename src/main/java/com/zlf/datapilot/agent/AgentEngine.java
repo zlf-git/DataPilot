@@ -3,6 +3,8 @@ package com.zlf.datapilot.agent;
 import com.zlf.datapilot.agent.gate.Gate;
 import com.zlf.datapilot.agent.gate.GateChain;
 import com.zlf.datapilot.agent.gate.GateResult;
+import com.zlf.datapilot.agent.hitl.IrEditGuard;
+import com.zlf.datapilot.agent.hitl.PreviewStore;
 import com.zlf.datapilot.agent.session.SessionStore;
 import com.zlf.datapilot.agent.step.ExplainStep;
 import com.zlf.datapilot.agent.step.PromptBuildStep;
@@ -11,6 +13,7 @@ import com.zlf.datapilot.agent.step.ReportStep;
 import com.zlf.datapilot.agent.step.RewriteStep;
 import com.zlf.datapilot.agent.step.SqlExecuteStep;
 import com.zlf.datapilot.agent.trace.RunStatus;
+import com.zlf.datapilot.agent.trace.SpanStatus;
 import com.zlf.datapilot.agent.trace.TraceRecorder;
 import com.zlf.datapilot.agent.trace.TraceSpan;
 import com.zlf.datapilot.agent.trace.TraceStep;
@@ -54,6 +57,7 @@ public class AgentEngine {
     private final ReportStep reportStep;
     private final TraceRecorder traceRecorder;
     private final SessionStore sessions;
+    private final PreviewStore previews;
 
     public AgentEngine(RewriteStep rewriteStep,
                        RecallStep recallStep,
@@ -65,7 +69,8 @@ public class AgentEngine {
                        ExplainStep explainStep,
                        ReportStep reportStep,
                        TraceRecorder traceRecorder,
-                       SessionStore sessions) {
+                       SessionStore sessions,
+                       PreviewStore previews) {
         this.rewriteStep = rewriteStep;
         this.recallStep = recallStep;
         this.promptBuildStep = promptBuildStep;
@@ -77,6 +82,7 @@ public class AgentEngine {
         this.reportStep = reportStep;
         this.traceRecorder = traceRecorder;
         this.sessions = sessions;
+        this.previews = previews;
     }
 
     /** LLM span 的输出摘要：IR 形状比 IR 全文有用（全文进 input/output 会把 TEXT 列灌满） */
@@ -104,6 +110,15 @@ public class AgentEngine {
         return s == null ? 0 : s.length();
     }
 
+    /** 新建一次运行的上下文（traceId 一次请求一个，三条入口共用） */
+    private AgentContext newContext(String question, String sessionId) {
+        AgentContext ctx = new AgentContext();
+        ctx.setTraceId(UUID.randomUUID().toString().replace("-", ""));
+        ctx.setSessionId(sessionId);
+        ctx.setUserQuestion(question);
+        return ctx;
+    }
+
     /**
      * 执行一次问数。返回装满结果的 {@link AgentContext}，失败信息放 errorMessage，不向上抛异常。
      *
@@ -112,11 +127,7 @@ public class AgentEngine {
      * 是因为本方法有 7 个提前返回点，漏一个就少一条运行记录，且这种漏通常到线上才发现。
      */
     public AgentContext run(String question, String sessionId) {
-        AgentContext ctx = new AgentContext();
-        ctx.setTraceId(UUID.randomUUID().toString().replace("-", ""));
-        ctx.setSessionId(sessionId);
-        ctx.setUserQuestion(question);
-
+        AgentContext ctx = newContext(question, sessionId);
         TraceStep trace = traceRecorder.open(ctx.getTraceId());
         try {
             return execute(ctx, trace);
@@ -125,8 +136,23 @@ public class AgentEngine {
         }
     }
 
-    /** 主链路本体：所有提前返回都走这里，埋点收尾统一在 {@link #run} 的 finally 里做。 */
+    /** 一锤到底：准备 + 执行。任一步出错就停在那里，不再往下走。 */
     private AgentContext execute(AgentContext ctx, TraceStep trace) {
+        prepare(ctx, trace);
+        return ctx.getErrorMessage() != null ? ctx : finish(ctx, trace);
+    }
+
+    /**
+     * 准备段（Ticket 12 拆出）：问题 → 改写 → 召回 → Prompt → LLM 生成 IR → 闸门①②③ → SQL → 闸门④。
+     *
+     * <p>拆的理由只有一个：HITL 的「预览」要求跑到「SQL 生成且四道闸门全过」为止就停下，
+     * 而「确认执行」要求从 IR 直接续上、<b>不重新调 LLM</b>（再调一次就可能生成一份
+     * 与用户刚看过的不同的 SQL，那预览就白看了）。切成两段之后，两条入口各自只走自己那一段。
+     *
+     * <p>参数化 SQL 在 prepare 末尾就绪（{@code ctx.sqlCommand}），因此「预览」返回的 SQL 与
+     * 「不预览直接问」返回的 SQL 是同一份代码产出的同一形状。
+     */
+    private AgentContext prepare(AgentContext ctx, TraceStep trace) {
         String question = ctx.getUserQuestion();
 
         // ⓪ 空问题短路（QA-03 P1-1）：不让空白输入走到 LLM/prompt 匹配，
@@ -167,32 +193,21 @@ public class AgentEngine {
             return ctx;
         }
 
-        // ⑤ 闸门阶段1（IR 层）：①存在性 → ②权限 → ③代价
-        GateResult irGate = trace.span(TraceSpan.GATE_IR, "phase=IR",
-                () -> gateChain.runPhase(Gate.Phase.IR, ctx), this::summarizeGate);
-        if (!irGate.isPass()) {
-            ctx.setErrorMessage(irGate.getReason());
+        // ⑤⑥⑦ 闸门①②③ → SQL → 闸门④
+        if (!runIrGates(ctx, trace, "phase=IR") || !convertToSql(ctx, trace) || !runSqlGate(ctx, trace, "phase=SQL")) {
             return ctx;
         }
+        return ctx;
+    }
 
-        // ⑥ IR → SQL
-        try {
-            SqlCommand cmd = trace.span(TraceSpan.IR_TO_SQL, "mode=" + ir.getSelectMode(),
-                    () -> irToSqlConverter.convert(ir), SqlCommand::sql);
-            ctx.setSqlCommand(cmd);
-            ctx.setGeneratedSql(cmd.sql());
-        } catch (IllegalArgumentException e) {
-            ctx.setErrorMessage(e.getMessage());
-            return ctx;
-        }
-
-        // ⑦ 闸门阶段2（SQL 层）：④语法（JSqlParser 解析 + 表/字段二次比对）
-        GateResult sqlGate = trace.span(TraceSpan.GATE_SQL, ctx.getGeneratedSql(),
-                () -> gateChain.runPhase(Gate.Phase.SQL, ctx), this::summarizeGate);
-        if (!sqlGate.isPass()) {
-            ctx.setErrorMessage(sqlGate.getReason());
-            return ctx;
-        }
+    /**
+     * 执行段（Ticket 12 拆出）：执行 → 闸门⑤ → 环比 → 解释 → 报告 → 记会话。
+     *
+     * <p>要求 {@code ctx.ir} 与 {@code ctx.sqlCommand} 已就绪 —— 普通问数由 {@link #prepare} 备好，
+     * HITL 由 {@link #executePreview} 用「确认过的 IR」重新备好。
+     */
+    private AgentContext finish(AgentContext ctx, TraceStep trace) {
+        QueryIr ir = ctx.getIr();
 
         // ⑧ 执行
         trace.span(TraceSpan.EXECUTE, ctx.getGeneratedSql(),
@@ -234,6 +249,135 @@ public class AgentEngine {
         // 失败/拒绝的轮次不进上下文 —— 否则下一轮「那环比呢」会补全到一个根本没答出来的问题上
         rememberRound(ctx);
         return ctx;
+    }
+
+    /** ⑤ 闸门阶段1（IR 层）：①存在性 → ②权限 → ③代价。返回 false 表示已被拦下 */
+    private boolean runIrGates(AgentContext ctx, TraceStep trace, String label) {
+        GateResult irGate = trace.span(TraceSpan.GATE_IR, label,
+                () -> gateChain.runPhase(Gate.Phase.IR, ctx), this::summarizeGate);
+        if (!irGate.isPass()) {
+            ctx.setErrorMessage(irGate.getReason());
+            return false;
+        }
+        return true;
+    }
+
+    /** ⑥ IR → SQL。返回 false 表示生成器显式拒绝（如跨表维度） */
+    private boolean convertToSql(AgentContext ctx, TraceStep trace) {
+        QueryIr ir = ctx.getIr();
+        try {
+            SqlCommand cmd = trace.span(TraceSpan.IR_TO_SQL, "mode=" + ir.getSelectMode(),
+                    () -> irToSqlConverter.convert(ir), SqlCommand::sql);
+            ctx.setSqlCommand(cmd);
+            ctx.setGeneratedSql(cmd.sql());
+            return true;
+        } catch (IllegalArgumentException e) {
+            ctx.setErrorMessage(e.getMessage());
+            return false;
+        }
+    }
+
+    /** ⑦ 闸门阶段2（SQL 层）：④语法（JSqlParser 解析 + 表/字段二次比对） */
+    private boolean runSqlGate(AgentContext ctx, TraceStep trace, String label) {
+        GateResult sqlGate = trace.span(TraceSpan.GATE_SQL, label + " " + ctx.getGeneratedSql(),
+                () -> gateChain.runPhase(Gate.Phase.SQL, ctx), this::summarizeGate);
+        if (!sqlGate.isPass()) {
+            ctx.setErrorMessage(sqlGate.getReason());
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * HITL 第一段（Ticket 12）：只校验不执行。
+     *
+     * <p>跑到 {@link #prepare} 结束就停 —— 四道闸门全过、SQL 已生成，但<b>一条也没往数据源上打</b>。
+     * 停在这里是票面的硬要求：「preview 的返回值里出现任何一行数据，都说明它在偷偷执行」。
+     *
+     * <p>成功时 run 状态落 {@link RunStatus#PREVIEW}（不是 SUCCESS）：这次运行确实什么都没查出来，
+     * 把它混进成功率会让「平均延迟/成功率」这类指标悄悄变好看。
+     */
+    public AgentContext preview(String question, String sessionId) {
+        AgentContext ctx = newContext(question, sessionId);
+        TraceStep trace = traceRecorder.open(ctx.getTraceId());
+        try {
+            prepare(ctx, trace);
+            if (ctx.getErrorMessage() != null) {
+                // 预览阶段就被拦：按推导规则落 REJECTED/FAILED，不补 hitl span（没有「待确认」这回事）
+                return ctx;
+            }
+            PreviewStore.Preview snapshot = previews.save(ctx);
+            ctx.setPreviewId(snapshot.previewId());
+            trace.mark(TraceSpan.HITL_PREVIEW, "previewId=" + snapshot.previewId(),
+                    "sql=" + len(ctx.getGeneratedSql()) + "chars, 未执行, ttl=" + previews.ttlMinutes() + "min",
+                    SpanStatus.PREVIEW);
+            ctx.setRunStatus(RunStatus.PREVIEW);
+            ctx.setAnswer("已生成 SQL 并通过四道闸门校验，尚未执行；确认后提交 /api/ask/execute（"
+                    + previews.ttlMinutes() + " 分钟内有效）");
+            return ctx;
+        } finally {
+            trace.finish(ctx, RunStatus.of(ctx));
+        }
+    }
+
+    /**
+     * HITL 第二段（Ticket 12）：按预览快照执行，<b>重跑闸门 1~4</b>。
+     *
+     * <p>三个刻意的决定：
+     * <ol>
+     *   <li><b>不复用预览生成的 SQL 文本</b>，而是拿 IR 重新 {@code convert}。SQL 文本一旦被人工经手，
+     *       就再也说不清「它还是不是原来那条被校验过的查询」；重新生成则是「同一份 IR → 同一段代码 → SQL」，
+     *       闸门校验的对象与真正执行的对象必然是同一个。</li>
+     *   <li><b>不重新调 LLM</b>。再生成一次 IR 会得到一份用户没看过的查询，预览的意义就没了。</li>
+     *   <li><b>编辑越界直接 REPLAN</b>，不做「尽力而为地部分应用」——只应用一半的编辑，用户看到的
+     *       执行结果会既不是他改的那份、也不是预览那份，是最坏的一种。</li>
+     * </ol>
+     */
+    public AgentContext executePreview(PreviewStore.Preview preview, QueryIr submitted) {
+        AgentContext ctx = newContext(preview.question(), preview.sessionId());
+        ctx.setRewrittenQuestion(preview.rewrittenQuestion());
+        ctx.setPreviewId(preview.previewId());
+        // 环比天数不在 IR 里（RewriteStep 就地标的），必须从快照恢复，
+        // 否则「那环比呢」的预览执行出来只有本期，与直接问的行为不一致
+        ctx.setComparisonDays(preview.comparisonDays());
+
+        TraceStep trace = traceRecorder.open(ctx.getTraceId());
+        try {
+            QueryIr stored = previews.parseIr(preview);
+            IrEditGuard.Verdict verdict = IrEditGuard.diff(stored, submitted);
+            ctx.setEditAllowed(verdict.allowed());
+
+            if (verdict.replan()) {
+                ctx.setStructuralChanges(verdict.structural());
+                ctx.setErrorMessage("编辑超出可调范围，请重新问一遍生成新的预览：" + verdict.reason()
+                        + "（可调整的只有：过滤条件的值、结果条数、排序方向、维度）");
+                ctx.setRunStatus(RunStatus.REJECTED);
+                trace.mark(TraceSpan.HITL_EXECUTE, "previewId=" + preview.previewId(),
+                        "REPLAN: " + verdict.reason(), SpanStatus.REPLAN);
+                return ctx;
+            }
+
+            QueryIr target = submitted != null ? submitted : stored;
+            // anchor / 环比平移是服务端字段：执行前清空，让生成器按此刻的数据重新解析锚点
+            IrEditGuard.enforceServerFields(target);
+            ctx.setIr(target);
+
+            trace.mark(TraceSpan.HITL_EXECUTE, "previewId=" + preview.previewId()
+                            + ", edits=" + verdict.allowed().size(),
+                    verdict.allowed().isEmpty() ? "按预览原样执行"
+                            : "接受编辑：" + String.join("；", verdict.allowed()),
+                    SpanStatus.SUCCESS);
+
+            // 重跑闸门 1~4：编辑后的 IR 与重新生成的 SQL 都要重新过一遍
+            if (!runIrGates(ctx, trace, "phase=IR(confirmed)")
+                    || !convertToSql(ctx, trace)
+                    || !runSqlGate(ctx, trace, "phase=SQL(confirmed)")) {
+                return ctx;
+            }
+            return finish(ctx, trace);
+        } finally {
+            trace.finish(ctx, RunStatus.of(ctx));
+        }
     }
 
     /**

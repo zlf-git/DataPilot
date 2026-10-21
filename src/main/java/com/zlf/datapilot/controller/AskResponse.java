@@ -48,6 +48,24 @@ public class AskResponse {
     /** 环比结论：前 N 天无数据 / 前 N 天的值（Ticket 10；无环比时 null） */
     private String comparisonNote;
 
+    /**
+     * 预览 ID（Ticket 12）：{@code /api/ask/preview} 成功时返回，
+     * 调用 {@code /api/ask/execute} 时原样带回。为空表示这次不是预览、也不可执行。
+     */
+    private String previewId;
+
+    /**
+     * 本次执行接受的编辑（Ticket 12）：如「第 1 个过滤条件值变更：APP → MP」。
+     * <b>服务端算出来的</b>，不是客户端自述 —— 客户端说自己只改了 value 不算数，见 {@code IrEditGuard}。
+     */
+    private List<String> edits;
+
+    /**
+     * 编辑越界之处（Ticket 12）：非空即 status=REJECTED 且这次没有执行。
+     * 内容形如「指标变更：[gmv_total] → [gmv_total, order_cnt]」，用来告诉用户「你改的是问题不是参数」。
+     */
+    private List<String> structuralChanges;
+
     public String getTraceId() {
         return traceId;
     }
@@ -190,5 +208,29 @@ public class AskResponse {
 
     public void setComparisonNote(String comparisonNote) {
         this.comparisonNote = comparisonNote;
+    }
+
+    public String getPreviewId() {
+        return previewId;
+    }
+
+    public void setPreviewId(String previewId) {
+        this.previewId = previewId;
+    }
+
+    public List<String> getEdits() {
+        return edits;
+    }
+
+    public void setEdits(List<String> edits) {
+        this.edits = edits;
+    }
+
+    public List<String> getStructuralChanges() {
+        return structuralChanges;
+    }
+
+    public void setStructuralChanges(List<String> structuralChanges) {
+        this.structuralChanges = structuralChanges;
     }
 }

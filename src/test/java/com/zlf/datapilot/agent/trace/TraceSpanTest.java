@@ -16,10 +16,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TraceSpanTest {
 
     @Test
-    @DisplayName("基线由目录长度决定，不写死数字（01 阶段 6 个节点时也不能失效）")
+    @DisplayName("基线 = 目录里「属于 ask 链路」的条数，不写死数字")
     void baselineComesFromCatalogLength() {
-        assertThat(TraceSpan.expectedPerSuccess()).isEqualTo(TraceSpan.values().length);
+        long askSpans = Arrays.stream(TraceSpan.values()).filter(TraceSpan::inAskBaseline).count();
+        assertThat(TraceSpan.expectedPerSuccess()).isEqualTo((int) askSpans);
         assertThat(TraceSpan.expectedPerSuccess()).isGreaterThanOrEqualTo(6);
+    }
+
+    @Test
+    @DisplayName("HITL 的两个 span 不进 ask 基线：进了就会让普通问数的「应有多少 span」虚高")
+    void hitlSpansAreOutsideTheAskBaseline() {
+        assertThat(TraceSpan.HITL_PREVIEW.inAskBaseline()).isFalse();
+        assertThat(TraceSpan.HITL_EXECUTE.inAskBaseline()).isFalse();
+        assertThat(TraceSpan.HITL_PREVIEW.type()).isEqualTo(SpanType.HITL);
+        assertThat(TraceSpan.HITL_EXECUTE.type()).isEqualTo(SpanType.HITL);
+        // 基线必须严格小于目录长度 —— 这条断言就是「HITL 没被漏进基线」的证据
+        assertThat(TraceSpan.expectedPerSuccess()).isLessThan(TraceSpan.values().length);
     }
 
     @Test

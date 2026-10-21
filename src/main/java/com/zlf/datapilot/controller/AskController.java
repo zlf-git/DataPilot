@@ -32,7 +32,8 @@ public class AskController {
         return toResponse(ctx, costMs);
     }
 
-    private AskResponse toResponse(AgentContext ctx, long costMs) {
+    /** 上下文 → 响应体。三条入口（ask / preview / execute）共用，避免各自拼一份导致字段逐渐长歪 */
+    static AskResponse toResponse(AgentContext ctx, long costMs) {
         AskResponse r = new AskResponse();
         r.setTraceId(ctx.getTraceId());
         // 运行结论显式回显（Ticket 11）：answer 现在成功时也有内容，判据不能再看「answer 是否为空」
@@ -62,6 +63,10 @@ public class AskController {
         r.setRewrittenQuestion(ctx.getRewrittenQuestion());
         r.setComparisonSql(ctx.getComparisonSql());
         r.setComparisonNote(ctx.getComparisonNote());
+        // HITL（Ticket 12）：预览 ID 与「这次编辑被接受/被拒绝在哪」，前端据此渲染确认页
+        r.setPreviewId(ctx.getPreviewId());
+        r.setEdits(ctx.getEditAllowed());
+        r.setStructuralChanges(ctx.getStructuralChanges());
         return r;
     }
 

@@ -19,7 +19,7 @@ public enum RunStatus {
     /** 被五道闸门拦下（属于策略生效，不是故障） */
     REJECTED,
 
-    /** 只生成预览未执行（Ticket 12 HITL 用，本票不产出） */
+    /** 只生成预览未执行（Ticket 12 HITL：四道闸门全过，但一条 SQL 都没跑） */
     PREVIEW;
 
     /**
@@ -31,8 +31,15 @@ public enum RunStatus {
      * </ol>
      * 为什么从 gateResults 反查而不是给 AgentContext 加字段：闸门结果本来就是链路透明回显的一部分，
      * 已有信息能判就不新增状态位，少一个「谁都能写」的字段（评审反复强调的写入方唯一原则）。
+     *
+     * <p>Ticket 12 破了这个规矩一次：HITL 的两条路径（预览、编辑越界）推导不出来，
+     * 只能由引擎显式写 {@code ctx.runStatus}。约束是<b>写入方唯一</b>——只有
+     * {@code AgentEngine.preview/executePreview} 写它，其余路径恒为 null，行为不变。
      */
     public static RunStatus of(AgentContext ctx) {
+        if (ctx.getRunStatus() != null) {
+            return ctx.getRunStatus();
+        }
         boolean hasError = ctx.getErrorMessage() != null && !ctx.getErrorMessage().isBlank();
         if (!hasError) {
             return SUCCESS;

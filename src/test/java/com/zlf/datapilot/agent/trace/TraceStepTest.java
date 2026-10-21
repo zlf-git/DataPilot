@@ -161,17 +161,39 @@ class TraceStepTest {
     }
 
     @Test
-    @DisplayName("一次运行只提交一次：9 个 span + run 走一次 saveTrace，不是 10 次往返")
+    @DisplayName("一次运行只提交一次：全部 ask span + run 走一次 saveTrace，不是每条一次往返")
     void allSpansWrittenInOneCommit() {
         TraceStep t = trace();
+        // 只遍历属于 ask 链路的 span：HITL 的 preview/execute 是另一条入口的（Ticket 12），
+        // 拿它们一起跑会把「一次问数该有多少 span」这条基线测成「目录有多长」
         for (TraceSpan span : TraceSpan.values()) {
-            t.span(span, "in", () -> "out", s -> s);
+            if (span.inAskBaseline()) {
+                t.span(span, "in", () -> "out", s -> s);
+            }
         }
         t.finish(ctx("q"), RunStatus.SUCCESS);
 
         List<AgentTraceRepository.StepRow> rows = flushedSteps();
         assertThat(rows).hasSize(TraceSpan.expectedPerSuccess());
         assertThat(rows.get(rows.size() - 1).stepOrder()).isEqualTo(TraceSpan.expectedPerSuccess());
+    }
+
+    @Test
+    @DisplayName("mark 落一条状态自定的 span：PREVIEW 不是「成功」也不是「失败」，是第三态")
+    void markRecordsExplicitStatus() {
+        TraceStep t = trace();
+        t.mark(TraceSpan.HITL_PREVIEW, "previewId=p1", "未执行", SpanStatus.PREVIEW);
+        t.mark(TraceSpan.HITL_EXECUTE, "previewId=p1", "REPLAN: 指标变更", SpanStatus.REPLAN);
+        t.finish(ctx("q"), RunStatus.PREVIEW);
+
+        List<AgentTraceRepository.StepRow> rows = flushedSteps();
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).stepName()).isEqualTo("hitl_preview");
+        assertThat(rows.get(0).spanType()).isEqualTo("hitl");
+        assertThat(rows.get(0).status()).isEqualTo("PREVIEW");
+        assertThat(rows.get(1).status()).isEqualTo("REPLAN");
+        // run 的状态也如实记 PREVIEW，不混进 SUCCESS 的成功率
+        assertThat(flushedRun().status()).isEqualTo("PREVIEW");
     }
 
     @Test

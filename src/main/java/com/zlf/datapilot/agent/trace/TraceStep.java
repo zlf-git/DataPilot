@@ -109,6 +109,22 @@ public class TraceStep {
         }
     }
 
+    /**
+     * 直接记一条「状态由调用方指定」的 span（Ticket 12 HITL 用）。
+     *
+     * <p>为什么不复用 {@link #span}：那个方法的状态只有 SUCCESS/FAILED 两态，来自「body 有没有抛异常」。
+     * 而人工介入的两种情况都不是这两个语义 —— {@link SpanStatus#PREVIEW} 是「校验完了、等确认」，
+     * {@link SpanStatus#REPLAN} 是「这次编辑越界，请回去重新问」，两者都不该落成 SUCCESS，
+     * 也不该被当成 FAILED 混进错误率。
+     */
+    public void mark(TraceSpan span, String input, String output, SpanStatus status) {
+        int seq = ++order;
+        LocalDateTime now = LocalDateTime.now();
+        buffer.add(new AgentTraceRepository.StepRow(traceId, span.code(), span.type().code(), seq,
+                status.name(), 0L, clip(input, FIELD_MAX), clip(output, FIELD_MAX),
+                0, null, now, now));
+    }
+
     /** 收尾：一次调用写完全部 span + agent_run（同事务，见 {@link AgentTraceRepository#saveTrace}）。 */
     public void finish(AgentContext ctx, RunStatus status) {
         BigDecimal cost = costOf(ctx.getPromptTokens(), ctx.getCompletionTokens());

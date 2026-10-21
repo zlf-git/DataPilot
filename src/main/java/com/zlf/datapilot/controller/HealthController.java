@@ -1,5 +1,6 @@
 package com.zlf.datapilot.controller;
 
+import com.zlf.datapilot.agent.hitl.PreviewStore;
 import com.zlf.datapilot.agent.session.SessionStore;
 import com.zlf.datapilot.agent.trace.SpanType;
 import com.zlf.datapilot.agent.trace.TraceSpan;
@@ -37,13 +38,15 @@ public class HealthController {
     private final EngineWhitelist engineWhitelist;
     private final LlmClient llmClient;
     private final SessionStore sessions;
+    private final PreviewStore previews;
 
     public HealthController(MetadataService service, EngineWhitelist engineWhitelist,
-                            LlmClient llmClient, SessionStore sessions) {
+                            LlmClient llmClient, SessionStore sessions, PreviewStore previews) {
         this.service = service;
         this.engineWhitelist = engineWhitelist;
         this.llmClient = llmClient;
         this.sessions = sessions;
+        this.previews = previews;
     }
 
     @GetMapping("/metadata")
@@ -84,11 +87,36 @@ public class HealthController {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("stepName", span.code());
             item.put("spanType", span.type().code());
+            item.put("inAskBaseline", span.inAskBaseline());
             catalog.add(item);
         }
         out.put("expectedSpansPerSuccess", TraceSpan.expectedPerSuccess());
         out.put("spanCatalog", catalog);
+        // Ticket 12：HITL 的 span 单独列出，明确「它不算进 ask 基线」——
+        // 否则下一个人加 span 时会以为基线该跟着涨
+        out.put("hitlSpans", Arrays.stream(TraceSpan.values())
+                .filter(s -> !s.inAskBaseline())
+                .map(TraceSpan::code)
+                .toList());
         out.put("spanTypes", Arrays.stream(SpanType.values()).map(SpanType::code).toList());
+        return out;
+    }
+
+    /**
+     * 预览快照自检（Ticket 12）：当前存活快照数与 TTL。
+     *
+     * <p>与 /session 同理：快照是「等人确认」的临时状态，泄漏了会一直占内存又不会被任何查询命中，
+     * 所以把「有多少份在等确认」暴露出来，比事后猜要省事。
+     */
+    @GetMapping("/hitl")
+    public Map<String, Object> hitlHealth() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("previews", previews.count());
+        out.put("maxPreviews", previews.maxPreviews());
+        out.put("ttlSeconds", previews.ttlSeconds());
+        out.put("ttlMinutes", previews.ttlMinutes());
+        out.put("storage", "memory");
+        out.put("editable", List.of("filters[].value", "limit", "orderBy[].direction", "dimensions"));
         return out;
     }
 

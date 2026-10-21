@@ -65,6 +65,19 @@
 
 ## 修订记录
 
+### v2.18（Ticket 12 HITL 预览/执行两段）
+
+- **`POST /api/ask/preview` 只校验不执行**：跑到「SQL 已生成 + 四道闸门全过」就停，`rows` 恒为空、trace 里没有 `execute` 步骤；run 状态落 `PREVIEW`（不混进成功率），`hitl_preview` 的 `status=PREVIEW`、`span_type=hitl`
+- **`POST /api/ask/execute` 重跑闸门 1~4**：拿快照 IR **重新 `convert` 出 SQL**（不复用预览那份文本 —— 文本一经人手就说不清还是不是那条被校验过的查询），再跑闸门①②③④；**不重新调 LLM**（10 次 execute 运行 `total_tokens=0`）
+- **编辑范围收窄且由服务端判定**：只认 `filters[].value` / `limit` / `orderBy[].direction` / `dimensions`，别的一律 `REPLAN`。合法性不看客户端自述，而是拿快照 IR 与提交 IR 逐字段 diff（否则「我只改了 value」这句自述本身就是攻击面）
+- **结构变更 → `agent_step.status=REPLAN` + `agent_run.status=REJECTED`**，一条 SQL 都不发；不做「部分应用」（改一半的结果既不是用户改的、也不是预览那份，是最坏的一种）
+- **服务端字段执行前清零**：`timeRange.anchor` 与 `compareOffsetDays` 由服务端重算，客户端指定 `compareOffsetDays` 直接 REPLAN
+- **span 基线仍是 11**：`TraceSpan` 加 `inAskBaseline` 标志，`hitl_preview`/`hitl_execute` 不进普通问数基线；`SpanStatus` 加 `PREVIEW`，`REPLAN` 首次真正启用
+- **`AskResponse` 加 `previewId`/`edits`/`structuralChanges`**；`GET /api/health/hitl` 暴露存活快照数、TTL、可编辑面
+- 验收 `qa/verify_hitl.py` **62/62**：预览零数据行、预览不污染多轮上下文、改值生效（15604.97→20324.53）、注入串只落在 params、改白名单外维度被闸门①当场拦（证明闸门真重跑）、结构变更 REPLAN、假 previewId 明确拒绝、环比问题预览→执行仍带环比结论
+- 测试 **148/148**（新增 11）；`run_eval`/`e2e_stub`/`verify_traces`(11)/`verify_session`/`verify_explain` 全绿；延迟 67.8/69.9ms（比 T11 高约 20ms，判断为机器负载，未做回退对照）
+- 边界：快照在进程内存（重启即丢）；TTL 600 秒内可多次执行，每次重跑闸门；execute 不重跑改写；`PREVIEW`/`REPLAN` 是第三、第四态，二分统计要显式处理
+
 ### v2.17（Ticket 11 解释 + 报告）
 
 - **ExplainStep**：模板生成 answer + 按结果形状定 `chartType`（空→table、单行单列→metric、多行单列→bar、日期首列两列→line、两列其它→bar、3+ 列→table）；**已有 answer 不覆盖** —— 结果自检的「无数据」、环比的「前 7 天无数据」优先
