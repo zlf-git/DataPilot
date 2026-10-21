@@ -5,6 +5,8 @@ import com.zlf.datapilot.agent.AgentEngine;
 import com.zlf.datapilot.agent.hitl.PreviewStore;
 import com.zlf.datapilot.agent.trace.RunStatus;
 import com.zlf.datapilot.ir.QueryIr;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -44,21 +46,42 @@ public class HitlController {
     }
 
     @PostMapping("/preview")
-    public AskResponse preview(@RequestBody AskController.AskRequest request) {
+    public AskResponse preview(@RequestBody AskController.AskRequest request, Authentication auth) {
         long start = System.currentTimeMillis();
-        AgentContext ctx = engine.preview(request.getQuestion(), request.getSessionId());
+        AgentContext ctx = engine.preview(request.getQuestion(), request.getSessionId(), owner(auth));
         return AskController.toResponse(ctx, System.currentTimeMillis() - start);
     }
 
     @PostMapping("/execute")
-    public AskResponse execute(@RequestBody ExecuteRequest request) {
+    public AskResponse execute(@RequestBody ExecuteRequest request, Authentication auth) {
         PreviewStore.Preview snapshot = previews.get(request.getPreviewId());
         if (snapshot == null) {
             return expired(request.getPreviewId());
         }
         long start = System.currentTimeMillis();
-        AgentContext ctx = engine.executePreview(snapshot, request.getIr());
+        AgentContext ctx = engine.executePreview(snapshot, request.getIr(), owner(auth));
         return AskController.toResponse(ctx, System.currentTimeMillis() - start);
+    }
+
+    /**
+     * 当前请求的身份（Ticket 14）。
+     *
+     * <p>两个坑都踩过，写在这里免得下次再踩：
+     * <ol>
+     *   <li>不能用 {@code @AuthenticationPrincipal(expression = "username")}：
+     *       匿名请求的 principal 是个 <b>String</b>（"anonymousUser"），在它上面取 {@code username}
+     *       属性会直接抛异常 —— 500，不是 401。第一版就是这么挂的，表现成「预览接口 500」。</li>
+     *   <li>不能直接拿 {@code auth.getName()} 当身份：匿名 token 的 getName() 是
+     *       {@code "anonymousUser"}（大写 U），与 {@link PreviewStore#ANONYMOUS} 不等。
+     *       这个细节一旦漏掉，「匿名预览 + 匿名执行」会被判成两个身份，HITL 直接不可用。</li>
+     * </ol>
+     */
+    private static String owner(Authentication auth) {
+        if (auth == null || auth instanceof AnonymousAuthenticationToken) {
+            return PreviewStore.ANONYMOUS;
+        }
+        String name = auth.getName();
+        return name == null || name.isBlank() ? PreviewStore.ANONYMOUS : name;
     }
 
     /**

@@ -234,14 +234,14 @@ async function textOf(page, selector) {
   })
   if (!health) fail(`后端不可达（经 ${BASE}/api 反代到 ${BACKEND}）`)
   const writeEnabled = health.writeEnabled !== false
-  console.log(`后端在线：指标 ${health.metricCount} 条 / 字段 ${health.fieldCount} 条，写接口 ${writeEnabled ? '已开' : '关闭'}`)
+  console.log(`后端在线：指标 ${health.metricCount} 条 / 字段 ${health.fieldCount} 条，写入 ${writeEnabled ? '可用' : '急停中'}`)
 
   await waitText(page, '后端在线')
 
   // ---- 1. 页面骨架 ----
   const navText = await textOf(page, '.ant-layout-sider')
   check('页面骨架：四个菜单齐全', ['问数', '指标管理', '元数据', '闸门配置'].every((t) => (navText || '').includes(t)), navText?.replace(/\s+/g, ' '))
-  check('顶栏探活：后端在线 + 写开关状态与后端一致', (await bodyText(page)).includes(writeEnabled ? '写接口已开' : '写接口关闭'))
+  check('顶栏探活：后端在线 + 写入状态与后端一致', (await bodyText(page)).includes(writeEnabled ? '写入可用' : '写入急停中'))
 
   // ---- 2. 问数页：直接问 ----
   // 注意：判据必须落在「这次请求才可能产生的内容」上。
@@ -319,6 +319,78 @@ async function textOf(page, selector) {
     check('HITL：结果回显 traceId（可去 /api/traces 复查）', !!traceId, traceId || '-')
   }
 
+  // ---- 3.5 鉴权（Ticket 14）：先证明拦得住，再证明放得行 ----
+  // 直接打接口而不是看按钮是否 disabled：票面要的是「未授权写不进去」这个外部行为，
+  // 「按钮灰了」只是 UI 的巧合 —— 有人改前端就能绕过，测它没有意义。
+  const probeBody = JSON.stringify({
+    metricId: 'zz_auth_probe', metricName: '鉴权探针', metricSql: 'SUM(total_gmv)',
+    metricType: 'atomic', tableName: 'ads_trade_overview_di',
+  })
+  const anonWrite = await page.evaluate(async (b) => {
+    const r = await fetch('/api/metrics', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: b })
+    return { status: r.status, text: await r.text() }
+  }, probeBody)
+  check('鉴权：不带凭证写指标 → 401', anonWrite.status === 401, `HTTP ${anonWrite.status}`)
+  check('鉴权：401 的响应体是 JSON 且说清「要凭证」（不是空白）', /未认证/.test(anonWrite.text), anonWrite.text.slice(0, 60))
+
+  // 业务角色：有身份但角色不够 → 403。与 401 必须分得开 —— 前者要换账号，后者要填凭证
+  const businessWrite = await page.evaluate(async (b) => {
+    const r = await fetch('/api/metrics', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + btoa('business:Biz@2026') },
+      body: b,
+    })
+    return r.status
+  }, probeBody)
+  check('鉴权：业务角色写指标 → 403（有身份但不够，不是 401）', businessWrite === 403, `HTTP ${businessWrite}`)
+
+  // 三角色不是一个形容词：DBA 能写白名单、不能写指标，两条都得各有各的边界
+  const dbaField = await page.evaluate(async () => {
+    const auth = { Authorization: 'Basic ' + btoa('dba:Dba@2026') }
+    const r = await fetch('/api/metadata/fields', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ tableName: 'ads_trade_overview_di', fieldName: 'zz_dba_probe', fieldType: 'varchar(16)' }),
+    })
+    const st = r.status
+    // 探针必须自己收尾：冒烟脚本不能给白名单留垃圾行
+    if (st === 200) {
+      await fetch('/api/metadata/fields?tableName=ads_trade_overview_di&fieldName=zz_dba_probe', {
+        method: 'DELETE', headers: auth,
+      })
+    }
+    return st
+  })
+  // 急停优先于角色：急停态下连 admin/dba 都写不进去 —— 这是「两层都要过」的直接证据
+  if (writeEnabled) {
+    check('鉴权：DBA 写白名单 → 200（白名单归 DBA）', dbaField === 200, `HTTP ${dbaField}`)
+  } else {
+    check('鉴权：急停态下 DBA 写白名单 → 403（急停优先于角色）', dbaField === 403, `HTTP ${dbaField}`)
+  }
+
+  const dbaMetric = await page.evaluate(async (b) => {
+    const r = await fetch('/api/metrics', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Basic ' + btoa('dba:Dba@2026') },
+      body: b,
+    })
+    return r.status
+  }, probeBody)
+  check('鉴权：DBA 写指标 → 403（DBA 是 admin 的子集，不是别名）', dbaMetric === 403, `HTTP ${dbaMetric}`)
+
+  // 页面上设一次凭证：后面指标页/元数据页的写用例都靠它
+  await clickButton(page, '写入凭证')
+  await waitText(page, '默认账号', 10000)
+  await fillByPlaceholder(page, '.ant-modal', '用户名（admin 或 dba）', 'admin')
+  await fillByPlaceholder(page, '.ant-modal', '密码', 'Admin@2026')
+  await clickButton(page, '保存')
+  await waitText(page, '写入凭证已设置', 10000)
+  const identityTag = await page.evaluate(() => {
+    const tags = [...document.querySelectorAll('header .ant-tag')].map((t) => t.innerText.trim())
+    return tags.find((t) => t === 'admin') || ''
+  })
+  check('鉴权：设完凭证顶栏显示当前身份 admin', identityTag === 'admin', identityTag)
+
   // ---- 4. 指标管理页 ----
   await clickNav(page, '指标管理')
   await waitText(page, 'gmv_total', 20000) // 等数据行，不等标题
@@ -338,11 +410,11 @@ async function textOf(page, selector) {
   // 写接口开着 → 应该测到「口径白名单」这条规矩；
   // 写接口关闭 → 请求先被 403 拦在门口，此时该断言的是「关闭态确实拒绝了写」。
   // 两种都写，是因为默认配置就是关闭态（Ticket 14 接鉴权前的兜底）。
-  const expectMsg = writeEnabled ? 'metric_sql 非法' : '写接口已关闭'
+  const expectMsg = writeEnabled ? 'metric_sql 非法' : '写入已被运维急停'
   await clickButton(page, '保存')
   await waitText(page, expectMsg, 20000)
   check(
-    `指标页：非法口径${writeEnabled ? '被口径白名单拒绝' : '被写开关拒绝'}且原因透传到页面`,
+    `指标页：非法口径${writeEnabled ? '被口径白名单拒绝' : '被运维急停拒绝'}且原因透传到页面`,
     (await bodyText(page)).includes(expectMsg),
   )
   await clickButton(page, '取消')
@@ -354,7 +426,7 @@ async function textOf(page, selector) {
   await waitText(page, 'ads_trade_overview_di', 20000)
   const metaText = await bodyText(page)
   check('元数据页：表清单与字段白名单都有内容', /ads_|dwd_|dim_/.test(metaText) && /字段名/.test(metaText))
-  check('元数据页：写开关状态与后端一致', writeEnabled ? !metaText.includes('写接口当前关闭') : metaText.includes('写接口当前关闭'))
+  check('元数据页：写开关状态与后端一致', writeEnabled ? !metaText.includes('写入已急停') : metaText.includes('写入已急停'))
 
   if (writeEnabled) {
     // 真写一条白名单字段，再从页面摘掉 —— 闭环验证 PUT + DELETE 且不留残留

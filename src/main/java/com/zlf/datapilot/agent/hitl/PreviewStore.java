@@ -48,6 +48,8 @@ public class PreviewStore {
      * @param comparisonDays 多轮「那环比呢」的天数（可空）。<b>必须跟着快照走</b>：
      *                   它不在 IR 里（是 RewriteStep 就地在上下文上标的），
      *                   丢了它就会出现「预览说这是环比问题、执行时却只出本期」的半截响应
+     * @param owner      生成这份快照的身份（Ticket 14；匿名记 {@link #ANONYMOUS}）。
+     *                   见 {@link #save(AgentContext, String)} 里为什么必须存
      */
     public record Preview(String previewId,
                           String traceId,
@@ -59,9 +61,18 @@ public class PreviewStore {
                           List<Object> params,
                           List<String> gates,
                           Integer comparisonDays,
+                          String owner,
                           long createdAt,
                           long expiresAt) {
+
+        /** 当前请求身份是否就是预览时那个身份 */
+        public boolean ownedBy(String currentOwner) {
+            return owner == null ? currentOwner == null : owner.equals(currentOwner);
+        }
     }
+
+    /** 匿名身份的占位值（没有凭证时的 owner，与任何具名账号都不相等） */
+    public static final String ANONYMOUS = "anonymous";
 
     private final ObjectMapper objectMapper;
     private final int maxPreviews;
@@ -84,8 +95,27 @@ public class PreviewStore {
                 this.maxPreviews, ttlSeconds);
     }
 
-    /** 把一次预览成功的运行存成快照，返回带 previewId 的快照 */
+    /**
+     * 把一次预览成功的运行存成快照（匿名身份）。
+     *
+     * @see #save(AgentContext, String)
+     */
     public Preview save(AgentContext ctx) {
+        return save(ctx, ANONYMOUS);
+    }
+
+    /**
+     * 把一次预览成功的运行存成快照，并记下<b>是谁</b>生成的（Ticket 14，QA-12 P2-3）。
+     *
+     * <p>为什么快照要带 owner：{@code previewId} 是一个不透明的 UUID，但它并不是「能力凭据」——
+     * 任何拿到它的人都能 execute，而 execute 会把这一轮<b>写进快照里那个 sessionId 的会话</b>。
+     * 也就是说，一个 id 泄露出去，别人就能往你的会话里塞轮次，进而影响你下一句「那环比呢」的补全。
+     * 无鉴权阶段这只是理论问题；有了角色之后，它就变成「DBA 的预览被业务方执行」这种真实的越界。
+     *
+     * <p>做法不是在 id 上加签名（那需要密钥生命周期管理），而是<b>执行时比对 owner</b>：
+     * 匿名预览 → 必须匿名执行；admin 预览 → 必须 admin 执行。成本一次字符串比较，边界清楚。
+     */
+    public Preview save(AgentContext ctx, String owner) {
         String id = UUID.randomUUID().toString().replace("-", "");
         long now = System.currentTimeMillis();
         Preview preview = new Preview(id,
@@ -98,6 +128,7 @@ public class PreviewStore {
                 ctx.getSqlCommand() == null ? List.of() : List.copyOf(ctx.getSqlCommand().params()),
                 List.copyOf(ctx.getGateResults()),
                 ctx.getComparisonDays(),
+                owner == null ? ANONYMOUS : owner,
                 now,
                 now + ttlMillis);
         synchronized (previews) {

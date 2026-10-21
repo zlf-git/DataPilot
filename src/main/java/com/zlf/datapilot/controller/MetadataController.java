@@ -22,8 +22,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 元数据维护接口（Ticket 01b；字段白名单写接口 Ticket 13 补）。
- * 读接口无条件开放；写接口受 datapilot.metadata.write-enabled 开关控制（默认关，Ticket 14 落地鉴权前兜底）。
+ * 元数据维护接口（Ticket 01b；字段白名单写接口 Ticket 13 补；鉴权 Ticket 14）。
+ *
+ * <p>三层边界，各管各的：
+ * <ol>
+ *   <li><b>身份/角色</b>（{@code SecurityConfig}）：谁能写。指标与闸门仅管理员，白名单需管理员或 DBA。</li>
+ *   <li><b>急停开关</b>（{@code datapilot.metadata.write-enabled}）：此刻能不能写。
+ *       Ticket 14 之前它默认 {@code false}，作用是「没有鉴权时先把写接口关掉」；
+ *       鉴权落地后它的语义变了 —— 从「安全兜底」变成「运维急停」（演示前一键冻结写入），
+ *       默认值也随之改成 {@code true}。两层都要过：有身份 ≠ 允许写。</li>
+ *   <li><b>入参校验</b>（{@code @Valid} + service 层白名单）：写什么。
+ *       {@code metric_sql} 过正则白名单，字段名过格式校验，删白名单前查引用。</li>
+ * </ol>
  */
 @RestController
 @RequestMapping("/api")
@@ -98,7 +108,7 @@ public class MetadataController {
     private void checkWriteEnabled() {
         if (!props.getMetadata().isWriteEnabled()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "元数据写接口已关闭（datapilot.metadata.write-enabled=false）");
+                    "写入已被运维急停（datapilot.metadata.write-enabled=false），重启并置 true 后再改");
         }
     }
 }

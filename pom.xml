@@ -78,10 +78,21 @@
             <artifactId>jsqlparser</artifactId>
             <version>4.9</version>
         </dependency>
+        <!-- 鉴权（Ticket 14）：三角色 + HTTP Basic。写接口必须有身份，读/问数保持匿名 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
         <!-- 单元测试（Ticket 06c）：JUnit5 + Mockito + AssertJ，仅 test scope -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- @WithMockUser / httpBasic() 请求后置处理器（Ticket 14） -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

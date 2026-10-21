@@ -271,9 +271,15 @@ public class DatapilotProperties {
         }
     }
 
-    /** 元数据写接口开关（Ticket 14 落地鉴权前，写接口默认关） */
+    /**
+     * 元数据写接口的<b>运维急停</b>（Ticket 14 起语义变更）。
+     *
+     * <p>Ticket 14 之前它是「没有鉴权时先把写接口关掉」的兜底，默认 {@code false}；
+     * 鉴权落地后缺省打开 —— 因为「能不能写」已经由角色决定，再默认关着只会让管理员也写不了。
+     * 现在它的用途只剩一个：演示前想冻住所有写入时，置 {@code false} 即可，不必改代码。
+     */
     public static class Metadata {
-        private boolean writeEnabled = false;
+        private boolean writeEnabled = true;
 
         public boolean isWriteEnabled() {
             return writeEnabled;

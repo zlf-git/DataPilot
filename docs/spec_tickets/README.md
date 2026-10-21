@@ -65,6 +65,17 @@
 
 ## 修订记录
 
+### v2.22（Ticket 14 鉴权最小落地 + QA-12 P2-3 收口）
+
+- **三角色 + HTTP Basic，只保护写接口**：`BUSINESS` 只读、`ADMIN` 全部写、`DBA` 仅字段白名单（DBA 是 admin 的子集，不是别名）。
+  `PUT /api/metrics`、`PUT /api/gate-config` 仅 ADMIN；`PUT|DELETE /api/metadata/**` 归 ADMIN+DBA；其余 `/api/**` 匿名放行（票面要求 `/api/ask` 匿名 200）
+- **401 与 403 分开且都是 JSON**：前者「补凭证」，后者「换账号」。401 刻意不带 `WWW-Authenticate` —— 带了会让 headless 的 fetch 挂住、真人浏览器弹原生登录框，与「无登录页」的设计冲突
+- **`write-enabled` 语义变更**：从「没有鉴权时先关掉写」的安全兜底，改成「运维急停」，默认值 false → true。现在有两层：有身份 ≠ 允许写（急停态下 admin/dba 一样 403）
+- **QA-12 P2-3 收口**：`previewId` 绑定生成者身份，跨身份执行 → REJECTED、不发 SQL；同一个人重试仍可执行（快照不被越权请求烧掉）
+- **前端补凭证入口**（票面「不包含登录 UI」，但没它 Ticket 13 三个写页面在默认配置下全部只读）：页头按钮 + 弹窗，存 sessionStorage，401 自动弹窗
+- **踩坑三条**：`@AuthenticationPrincipal(expression="username")` 在匿名 String principal 上抛异常（500 而不是 401）；`WWW-Authenticate` 让 headless fetch 卡死；`AnonymousAuthenticationToken.getName()` 是 `anonymousUser` 而非 `anonymous`
+- 测试 **186/186**（新增 `SecurityAccessTest` 15 例 + `PreviewStoreTest` 3 例）；冒烟 **32/32**（默认）/ **29/29**（急停态）；`verify_hitl` **76/76**（+5 条跨身份）；`verify_traces`/`session`/`explain`/`e2e_stub` 无回归
+
 ### v2.21（QA-12 收口：3 条 P2 全修 + 5 条 P3）
 
 - **P2-1 `limit` 下界**：改 `0`/负数原本被生成器静默放大到 `max_rows=1000`，而回显还写「limit 变更：1 → 0」。现在编辑层直接 REPLAN，生成器兜底改 `log.warn` 留痕

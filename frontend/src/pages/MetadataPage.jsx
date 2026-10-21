@@ -162,8 +162,8 @@ export default function MetadataPage() {
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="写接口当前关闭（datapilot.metadata.write-enabled=false）"
-          description="页面仍可浏览，但新增/编辑/移出白名单会被后端 403 拒绝。联调前把该开关打开并按 Ticket 14 接上鉴权。"
+          message="写入已急停（datapilot.metadata.write-enabled=false）"
+          description="页面仍可浏览，但新增/编辑/移出白名单会被后端 403 拒绝。这是运维开关，不是权限：即使有 admin 凭证也写不进去，需要重启并置 true。"
         />
       )}
       <Row gutter={12}>

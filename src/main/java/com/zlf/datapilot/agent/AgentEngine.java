@@ -301,6 +301,16 @@ public class AgentEngine {
      * 把它混进成功率会让「平均延迟/成功率」这类指标悄悄变好看。
      */
     public AgentContext preview(String question, String sessionId) {
+        return preview(question, sessionId, PreviewStore.ANONYMOUS);
+    }
+
+    /**
+     * 预览（带身份，Ticket 14）：生成并校验 SQL，不执行，返回待确认的快照。
+     *
+     * @param owner 当前请求的身份（匿名传 {@link PreviewStore#ANONYMOUS}）。
+     *              它会被写进快照，执行时比对 —— 详见 {@link PreviewStore#save(AgentContext, String)}
+     */
+    public AgentContext preview(String question, String sessionId, String owner) {
         AgentContext ctx = newContext(question, sessionId);
         TraceStep trace = traceRecorder.open(ctx.getTraceId());
         try {
@@ -309,7 +319,7 @@ public class AgentEngine {
                 // 预览阶段就被拦：按推导规则落 REJECTED/FAILED，不补 hitl span（没有「待确认」这回事）
                 return ctx;
             }
-            PreviewStore.Preview snapshot = previews.save(ctx);
+            PreviewStore.Preview snapshot = previews.save(ctx, owner);
             ctx.setPreviewId(snapshot.previewId());
             trace.mark(TraceSpan.HITL_PREVIEW, "previewId=" + snapshot.previewId(),
                     "sql=" + len(ctx.getGeneratedSql()) + "chars, 未执行, ttl=" + previews.ttlMinutes() + "min",
@@ -337,6 +347,27 @@ public class AgentEngine {
      * </ol>
      */
     public AgentContext executePreview(PreviewStore.Preview preview, QueryIr submitted) {
+        return executePreview(preview, submitted, preview.owner());
+    }
+
+    /**
+     * 执行一份预览快照（带身份，Ticket 14 / QA-12 P2-3）。
+     *
+     * <p><b>身份不属于这份快照就直接拒，且一条 SQL 都不发</b>。判断放在最前面，
+     * 在建上下文、开 trace 之前就想清楚：越界的请求不值得一次 span，也不该进会话。
+     */
+    public AgentContext executePreview(PreviewStore.Preview preview, QueryIr submitted, String owner) {
+        if (!preview.ownedBy(owner)) {
+            // 越界执行是一次安全事件，必须留痕 —— 但只进应用日志、不落 agent_run：
+            // 它没跑任何东西，记成一条运行会让 PASS/REJECTED 的统计失真。
+            log.warn("拒绝跨身份执行预览：previewId={} owner={} requester={} sessionId={}",
+                    preview.previewId(), preview.owner(), owner, preview.sessionId());
+            AgentContext denied = newContext(preview.question(), preview.sessionId());
+            denied.setPreviewId(preview.previewId());
+            denied.reject("这份预览不是你生成的（预览时身份：" + preview.owner()
+                    + "，当前身份：" + owner + "），请用自己的凭证重新预览", "hitl");
+            return denied;
+        }
         AgentContext ctx = newContext(preview.question(), preview.sessionId());
         ctx.setRewrittenQuestion(preview.rewrittenQuestion());
         ctx.setPreviewId(preview.previewId());

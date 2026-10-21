@@ -134,4 +134,41 @@ class PreviewStoreTest {
         assertThat(store.get("  ")).isNull();
         assertThat(store.get("nope")).isNull();
     }
+
+    // ---------------- Ticket 14：快照归属 ----------------
+
+    @Test
+    @DisplayName("owner 跟着快照走：admin 预览的只有 admin 能执行，别人一律 false")
+    void previewRemembersOwner() {
+        PreviewStore store = new PreviewStore(mapper, 10, 60);
+        PreviewStore.Preview p = store.save(ctxOf("10月19日小程序渠道的GMV是多少"), "admin");
+
+        assertThat(p.owner()).isEqualTo("admin");
+        assertThat(p.ownedBy("admin")).isTrue();
+        assertThat(p.ownedBy("dba")).isFalse();
+        assertThat(p.ownedBy(PreviewStore.ANONYMOUS)).isFalse();
+        assertThat(p.ownedBy(null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("匿名预览落 ANONYMOUS（不是 null），匿名执行仍能通过")
+    void anonymousPreviewIsOwnedByAnonymous() {
+        PreviewStore store = new PreviewStore(mapper, 10, 60);
+        PreviewStore.Preview p = store.save(ctxOf("10月19日小程序渠道的GMV是多少"));
+
+        assertThat(p.owner()).isEqualTo(PreviewStore.ANONYMOUS);
+        assertThat(p.ownedBy(PreviewStore.ANONYMOUS)).isTrue();
+        // 有身份的人不能顺手执行匿名预览：否则「匿名问一次、用 admin 执行」就能把 admin 的会话写脏
+        assertThat(p.ownedBy("admin")).isFalse();
+    }
+
+    @Test
+    @DisplayName("owner 传 null 归一成 ANONYMOUS（不落一个 null 进去让比对失效）")
+    void nullOwnerFallsBackToAnonymous() {
+        PreviewStore store = new PreviewStore(mapper, 10, 60);
+        PreviewStore.Preview p = store.save(ctxOf("10月19日小程序渠道的GMV是多少"), null);
+
+        assertThat(p.owner()).isEqualTo(PreviewStore.ANONYMOUS);
+        assertThat(p.ownedBy(PreviewStore.ANONYMOUS)).isTrue();
+    }
 }

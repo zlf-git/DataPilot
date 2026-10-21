@@ -52,6 +52,21 @@ def post_json(path, payload):
         return json.loads(resp.read().decode('utf-8'))
 
 
+def basic_token(user, password):
+    import base64
+    return 'Basic ' + base64.b64encode(f'{user}:{password}'.encode('utf-8')).decode('ascii')
+
+
+def post_json_as(path, payload, user, password):
+    """带 Basic 凭证的 POST（Ticket 14 起预览/执行会记录身份）"""
+    req = urllib.request.Request(HOST + path,
+                                 data=json.dumps(payload).encode('utf-8'),
+                                 headers={'Content-Type': 'application/json',
+                                          'Authorization': basic_token(user, password)})
+    with _opener.open(req, timeout=60) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
 def ask(question, session_id=None):
     payload = {'question': question}
     if session_id is not None:
@@ -304,6 +319,36 @@ def main():
     expired = execute('not-a-real-preview-id')
     check('过期文案带有效期单位（ttlText 不做分钟向上取整）',
           '有效' in (expired.get('answer') or ''), expired.get('answer', ''))
+
+    print('== ⑨c Ticket 14：预览凭据绑定身份（QA-12 P2-3）==')
+    sid_owner = 'hitl-owner-' + uuid.uuid4().hex[:8]
+    pv_admin = post_json_as('/api/ask/preview',
+                            {'question': QUESTION, 'sessionId': sid_owner}, 'admin', 'Admin@2026')
+    pid_admin = pv_admin.get('previewId') or ''
+
+    # 匿名拿着 admin 的 previewId 去执行：必须拒，且一条 SQL 都不发
+    r_cross = post_json('/api/ask/execute', {'previewId': pid_admin})
+    check('匿名执行 admin 的预览 → REJECTED（凭据不跨身份）',
+          r_cross.get('status') == 'REJECTED', r_cross.get('status'))
+    check('拒绝文案点明是「身份」而不是「过期」',
+          '不是你生成的' in (r_cross.get('answer') or ''), (r_cross.get('answer') or '')[:50])
+    check('跨身份拒绝时没有结果、没有 SQL 回显',
+          (r_cross.get('rows') or []) == [] and not (r_cross.get('sql') or ''),
+          'rows=%d sql=%r' % (len(r_cross.get('rows') or []), (r_cross.get('sql') or '')[:20]))
+
+    # 快照还在：同一个人接着执行应该照常成功（拒绝的是越权，不是把快照烧掉）
+    r_own = post_json_as('/api/ask/execute', {'previewId': pid_admin}, 'admin', 'Admin@2026')
+    row0 = (r_own.get('rows') or [{}])[0]
+    check('admin 执行自己的预览 → SUCCESS 且数正确（快照没被越权请求烧掉）',
+          r_own.get('status') == 'SUCCESS' and row0.get('gmv_channel') == GMV_MINIAPP,
+          '%s %s' % (r_own.get('status'), row0))
+
+    # 反方向：匿名预览、拿 admin 去执行 —— 同样拒
+    pv_anon = preview(QUESTION, 'hitl-owner-anon-' + uuid.uuid4().hex[:8])
+    r_rev = post_json_as('/api/ask/execute', {'previewId': pv_anon.get('previewId')},
+                         'admin', 'Admin@2026')
+    check('有身份的人执行匿名预览 → REJECTED（反方向同样不跨）',
+          r_rev.get('status') == 'REJECTED', r_rev.get('status'))
 
     print('== ⑩ 落库口径与基线 ==')
     health = get_json('/api/health/hitl')

@@ -74,4 +74,4 @@ datapilot:
 
   # 元数据写接口开关（Ticket 14 落地鉴权前，写接口默认关；本地演示置 true 才允许 PUT）
   metadata:
-    write-enabled: false
+    write-enabled: true
