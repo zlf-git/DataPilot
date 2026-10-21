@@ -65,6 +65,16 @@
 
 ## 修订记录
 
+### v2.13（QA-06c / QA-07 二审复核：06e 补丁 + 07c 记录）
+
+评审方在 `/tmp` 副本与隔离库 `qa_dp07` 里独立复验：06c 跑 15 组变异、07 真切 MySQL。结论 **两票均 PASS，0 P0 / 0 P1 代码缺陷**（06c 那条 P1「基线没处理完」已在 06d 修掉）。
+
+- **06e（新修 P3）**：`sources` 缺条目被当成「漂移」重复计数，摘要行显示「1 处漂移」而明细写「缺条目」。拆成 `source_missing()`（登记完整性，**不受 `--allow-stale` 宽宥**）+ `source_drift()`（内容是否变了，可降级告警），摘要行改三态。六种场景实测：原样 PASS / 干净副本 PASS / 缺条目 FAIL / 纯漂移 FAIL / `sources={}` FAIL / 缺条目 + `--allow-stale` 仍 FAIL
+- **复核确认（我的披露被证实）**：U2「两组参数值恒为 `[from, anchor]`，分不清归属」—— 评审方 M08 整段互换参数后测试仍通过，说明这条边界是真实上限而非借口；`--no-replay` 比原描述更严（value 改 +0.02 仍 FAIL，逃生口只放弃连库重放）
+- **07c 覆盖缺口教训**：`reportShowsBothDirectionsOfMismatch` 构造的是双向同时失配，旧单向判据本来就返回 `false` —— **用例名说双向、实际只验了「至少一个方向」**。双向必须拆两条独立用例
+- **07c 未接线（挂 02 AC）**：MySQL 模式下问 ADS 问题四道闸门全 PASS、到 JDBC 才报错，根因是闸门③ 只看元数据白名单、`EngineWhitelist.effective()` 无消费方；属「语义层与引擎未绑定」，验收项写进 02 票面，不在 07 半改
+- **环境坑**：Python `subprocess` 调 mvn 必须用 Windows 路径 `JAVA_HOME` + `mvn.cmd` 全路径（Git Bash 手敲能跑不代表脚本能跑）
+
 ### v2.12（QA-06c / QA-07 两份评审报告收口：06d + 07b 补丁）
 
 - **QA-06c P1-1 真因是换行符，不是「没重跑 gen」**：`sources` 指纹原来哈希原始字节，Windows 工作区（LF）算出 `6abbf84e…`，评审机 `git archive` 出来是 CRLF 算出 `1eb75d3a…`，于是「开发机 PASS、评审机第一条命令就 FAIL」。两个脚本统一改成「文本读入 + 换行归一 `\n` + 哈希」；验收口径改成**工作区与干净副本都必须绿**。`golden_set.json` 自身 sha256 `655695b5… → ac11b499…`（06a/06b 记录里的旧值是当时事实，不回改）

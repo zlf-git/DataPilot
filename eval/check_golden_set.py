@@ -162,22 +162,31 @@ def source_sha256(path):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
+def source_missing(doc):
+    """sources 的<b>登记完整性</b>（QA-06c P2-1）：只校验「登记了的有没有漂移」不够 ——
+    删掉一个条目就没人查了。两份来源（题目/期望 SQL 来自文档、sql_must/窗口来自 expectations）
+    都必须登记，缺一即 FAIL。与「漂移」分开两件事报，不共用一个列表（见 source_drift）。
+    """
+    src = doc.get('sources') or {}
+    if not src:
+        return ['sources 缺失：无法证明这份 golden_set 对应哪版文档']
+    missing = [k for k in REQUIRED_SOURCES if k not in src]
+    if missing:
+        return ['sources 缺条目：%s（删条目不能静默通过，两份来源都必须登记）' % ', '.join(missing)]
+    return []
+
+
 def source_drift(doc):
     """重算 sources 里登记的来源文件 sha256（QA-06a P2-1：此前是只写不校验的死指纹）。
 
     支持新格式 {'path':..., 'sha256':...} 与旧格式 'xxx (sha256:abcd1234)'；
     旧格式只有前缀，按 prefix 比对（能查出「改了」但排除不了碰撞，故生成器已改存全量）。
+
+    只报「登记过的来源内容变了」，不掺缺条目：两件事混在一个列表里时，摘要行会把
+    「缺一条」显示成「1 处漂移」，同一条问题被算两次且标签错（QA-06c 复核实测）。
     """
     issues = []
-    src = doc.get('sources') or {}
-    if not src:
-        return ['sources 缺失：无法证明这份 golden_set 对应哪版文档']
-    # QA-06c P2-1：只校验「登记了的条目有没有漂移」是不够的 —— 删掉一个条目就没人查了。
-    # 两份来源（题目/期望 SQL 来自文档、sql_must/窗口来自 expectations）都必须登记，缺一即 FAIL。
-    missing = [k for k in REQUIRED_SOURCES if k not in src]
-    if missing:
-        issues.append('sources 缺条目：%s（删条目不能静默通过，两份来源都必须登记）' % ', '.join(missing))
-    for key, meta in src.items():
+    for key, meta in (doc.get('sources') or {}).items():
         if isinstance(meta, dict):
             path, want = meta.get('path'), meta.get('sha256') or ''
         else:
@@ -267,7 +276,9 @@ def main():
     if sorted(nos) != list(range(1, 16)):
         fail(fails, '题号不是 1..15 齐全无重复：%s' % nos)
 
-    # 来源指纹（QA-06a P2-1）：文档改了没重生成，必须在这里红
+    # 来源登记 + 来源指纹（QA-06a P2-1 / QA-06c P2-1）：文档改了没重生成、或删条目，都必须在这里红
+    missing = source_missing(doc)
+    fails.extend(missing)            # 缺条目不是「旧」，不受 --allow-stale 宽宥
     drift = source_drift(doc)
     if drift:
         (warnings if args.allow_stale else fails).extend(drift)
@@ -322,7 +333,13 @@ def main():
         dist[it.get('expect_type')] = dist.get(it.get('expect_type'), 0) + 1
     print('  类型分布  %s' % ', '.join('%s=%d' % (k, dist.get(k, 0)) for k in ('scalar', 'stringset', 'rowset')))
     print('  窗口题    %d 条（%s）' % (len(win_nos), sorted(win_nos)))
-    print('  来源指纹  %s' % ('一致' if not drift else ('%d 处漂移（--allow-stale 降级为告警）' % len(drift))))
+    if missing:
+        src_line = '登记不完整（%d 条问题，见 FAIL 明细）' % len(missing)
+    elif drift:
+        src_line = '%d 处漂移（--allow-stale 降级为告警）' % len(drift)
+    else:
+        src_line = '一致'
+    print('  来源指纹  %s' % src_line)
     print('  重放校验  %s' % ('已执行（15 条 expect_sql 重跑对拍）' if do_replay else '跳过（--no-replay）'))
 
     for w in warnings:
