@@ -65,6 +65,18 @@
 
 ## 修订记录
 
+### v2.19（QA-10 / QA-11 收口：1 条 P1 + 6 条 P2）
+
+- **P1（QA-10，必修）单日题上环比把本期值当上期值**：上一轮是 `dt = 某一天` 时追问「那环比呢」，回 `本期：53042.41；环比：前 7 天：53042.41` —— 用户会读成「持平」。根因两处叠加：`RewriteStep` 在上一轮无相对窗口时把天数**兜底成 7 天**，而 `copyWithOffset` 只挪 `timeRange`、挪不动 `filters` 里的日期，环比 SQL 与本期**完全等价**
+- **两层都拦**：①`RewriteStep` 不兜底，直接拒绝「上一轮是按天查询，环比需要「近 N 天」这类窗口」②`AgentEngine.runComparison` 见 `timeRange == null` 不执行第二次查询（防 HITL/前端绕过改写层）
+- **`comparisonParams`**（QA-10 P2-1）：SQL 文本本期/环比逐字相同，只比文本「挪了」和「没挪」都过；参数才是证据。`verify_session` 判据升级为「参数恰好各差 7 天」（实测 `[10-12,10-19]` vs `[10-05,10-12]`）
+- **删掉 `DEFAULT_WINDOW_DAYS` 兜底**（QA-10 P2-2）：同比文案不再把默认值当库内事实说（「库内数据只有最近 7 天」是编的前提）
+- **`AgentContext.reject(reason, by)`**（QA-10 P2-3 = QA-11 P2-1）：一次写「文案 + 谁拒的」，无裸 setter；`RunStatus.of` 见 `rejectedBy` 即 `REJECTED`。三类拒绝入口：`rewrite` / `identify` / `converter`。LLM 超时仍是 FAILED
+- **`chartType` 初值 `"table"` → `null`**（QA-11 P2-2）：失败响应不再谎报有图表
+- **`verify_explain` 5 题 → 15 题全量**（QA-11 P2-3）：补上集成里唯一的 `line` 样本（Q14 日期首列）、每题「option 段内无裸 `<`」、环比轮次 answer 不被覆盖、拒绝时 `chartType=null`。40 项 → **142 项**
+- 数据：`mvn -o test` **152/152**；`verify_session` 21/21；`verify_explain` 142/142；`verify_hitl` 63/63；`run_eval` PASS（15/15、49/49、46.8ms）；`e2e_stub` PASS；`verify_traces` 31/31
+- 未处理（有意）：会话 TTL 与 500 会话上限仍只有单测 —— 长跑实测成本高于收益；`table` 形状仍无集成样本（不为凑形状编评测集外的查询）
+
 ### v2.18（Ticket 12 HITL 预览/执行两段）
 
 - **`POST /api/ask/preview` 只校验不执行**：跑到「SQL 已生成 + 四道闸门全过」就停，`rows` 恒为空、trace 里没有 `execute` 步骤；run 状态落 `PREVIEW`（不混进成功率），`hitl_preview` 的 `status=PREVIEW`、`span_type=hitl`

@@ -62,6 +62,7 @@ public class AskController {
         // 否则「那环比呢」这类追问在响应体里看不出系统理解成了什么
         r.setRewrittenQuestion(ctx.getRewrittenQuestion());
         r.setComparisonSql(ctx.getComparisonSql());
+        r.setComparisonParams(ctx.getComparisonParams());
         r.setComparisonNote(ctx.getComparisonNote());
         // HITL（Ticket 12）：预览 ID 与「这次编辑被接受/被拒绝在哪」，前端据此渲染确认页
         r.setPreviewId(ctx.getPreviewId());

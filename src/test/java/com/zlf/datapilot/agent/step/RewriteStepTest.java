@@ -80,20 +80,45 @@ class RewriteStepTest {
     }
 
     @Test
-    @DisplayName("环比天数沿用上一轮窗口；上一轮没有窗口时按 7 天兜底")
+    @DisplayName("环比天数沿用上一轮窗口：上一轮近 3 天 → 环比比的就是前 3 天")
     void comparisonDaysFollowLastWindow() {
         remember("s1", "近3天累计GMV是多少", 3);
         AgentContext c3 = ctx("环比呢", "s1");
         step.execute(c3);
         assertThat(c3.getComparisonDays()).isEqualTo(3);
         assertThat(c3.getRewrittenQuestion()).contains("与前 3 天对比");
+    }
 
-        SessionStore other = new SessionStore(5, 100, 30);
-        other.append("s2", new SessionStore.Round("10月19日当天的总GMV是多少", "10月19日当天的总GMV是多少",
+    @Test
+    @DisplayName("QA-10 P1-1 回归：单日题（无相对窗口）的环比必须拒绝，不能兜底成 7 天")
+    void comparisonOnSingleDayQuestionIsRejected() {
+        // 上一轮是单日题：windowDays=null（日期在 filters 里，没有相对窗口）
+        sessions.append("s2", new SessionStore.Round("10月19日当天的总GMV是多少", "10月19日当天的总GMV是多少",
                 List.of("gmv_total"), List.of(), null, "SELECT 1", System.currentTimeMillis()));
-        AgentContext c2 = ctx("那环比呢", "s2");
-        new RewriteStep(other).execute(c2);
-        assertThat(c2.getComparisonDays()).isEqualTo(7);
+
+        AgentContext c = ctx("那环比呢", "s2");
+        step.execute(c);
+
+        // 关键：不设环比天数 —— 以前这里会凭空兜底成 7，而 copyWithOffset 挪不动 filters 里的日期，
+        // 于是「前 7 天」查的还是 10-19，把本期数字当成上期说出来（静默错数）
+        assertThat(c.getComparisonDays()).isNull();
+        assertThat(c.getRewrittenQuestion()).isNull();
+        assertThat(c.getErrorMessage()).contains("按天查询").contains("近 N 天");
+        assertThat(c.getRejectedBy()).isEqualTo("rewrite");
+    }
+
+    @Test
+    @DisplayName("明确拒绝都带 rejectedBy=rewrite：落库才会是 REJECTED 而不是 FAILED")
+    void rejectionsAreTaggedAsRewrite() {
+        remember("s1", "近7天累计支付订单数是多少", 7);
+
+        AgentContext yoy = ctx("那同比呢", "s1");
+        step.execute(yoy);
+        assertThat(yoy.getRejectedBy()).isEqualTo("rewrite");
+
+        AgentContext dim = ctx("那渠道呢", "s1");
+        step.execute(dim);
+        assertThat(dim.getRejectedBy()).isEqualTo("rewrite");
     }
 
     @Test
@@ -125,7 +150,7 @@ class RewriteStepTest {
     }
 
     @Test
-    @DisplayName("同比：数据只有 7 天，明确说「没有去年同期」，不编一个同比数")
+    @DisplayName("同比：明确说「没有去年同期」，不编一个同比数，也不编一个「最近 N 天」的假前提")
     void yearOverYearIsRejectedWithReason() {
         remember("s1", "近7天累计支付订单数是多少", 7);
 
@@ -133,6 +158,8 @@ class RewriteStepTest {
         step.execute(c);
 
         assertThat(c.getErrorMessage()).contains("暂不支持同比").contains("去年同期");
+        // QA-10 P2-2：文案里不再出现兜底出来的「最近 7 天」
+        assertThat(c.getErrorMessage()).doesNotContain("最近 7 天");
         assertThat(c.getComparisonDays()).isNull();
     }
 }

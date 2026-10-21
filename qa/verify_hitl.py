@@ -245,6 +245,8 @@ def main():
     check('执行后给出环比 SQL（半开区间）',
           'dt > ?' in (ex6.get('comparisonSql') or '') and 'dt <= ?' in (ex6.get('comparisonSql') or ''),
           (ex6.get('comparisonSql') or '')[:50])
+    check('执行后给出环比参数（窗口前移的外部证据）',
+          len(ex6.get('comparisonParams') or []) == 2, str(ex6.get('comparisonParams')))
 
     print('== ⑩ 落库口径与基线 ==')
     health = get_json('/api/health/hitl')

@@ -45,7 +45,15 @@ public class AskResponse {
     /** 环比那次查询的 SQL（Ticket 10；无环比时 null） */
     private String comparisonSql;
 
-    /** 环比结论：前 N 天无数据 / 前 N 天的值（Ticket 10；无环比时 null） */
+    /**
+     * 环比那次查询的绑定参数（Ticket 10 QA 补充）：{@code [anchor-2d, anchor-d]}。
+     *
+     * <p>没有它，「环比窗口真的前移了」在外部不可观测 —— 本期与环比的 SQL 文本逐字相同（日期是 {@code ?}），
+     * 只比文本的话「挪了」和「没挪」都能过。这正是 QA-10 P1-1 那条静默错数漏网的原因。
+     */
+    private List<Object> comparisonParams;
+
+    /** 环比结论：前 N 天无数据 / 前 N 天的值 / 环比不可用的原因（Ticket 10；无环比时 null） */
     private String comparisonNote;
 
     /**
@@ -200,6 +208,14 @@ public class AskResponse {
 
     public void setComparisonSql(String comparisonSql) {
         this.comparisonSql = comparisonSql;
+    }
+
+    public List<Object> getComparisonParams() {
+        return comparisonParams;
+    }
+
+    public void setComparisonParams(List<Object> comparisonParams) {
+        this.comparisonParams = comparisonParams;
     }
 
     public String getComparisonNote() {

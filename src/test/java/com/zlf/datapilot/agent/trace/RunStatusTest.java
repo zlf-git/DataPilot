@@ -46,6 +46,23 @@ class RunStatusTest {
     }
 
     @Test
+    @DisplayName("改写/识别/生成器的明确拒绝（无闸门记录）→ REJECTED，不是 FAILED")
+    void rejectionOutsideGatesIsRejected() {
+        AgentContext c = new AgentContext();
+        c.reject("暂不支持同比：库内没有去年同期数据", "rewrite");
+
+        assertThat(RunStatus.of(c)).isEqualTo(RunStatus.REJECTED);
+        assertThat(c.getErrorMessage()).isNotBlank();
+        assertThat(c.getRejectedBy()).isEqualTo("rewrite");
+    }
+
+    @Test
+    @DisplayName("没有 rejectedBy 的同类文案仍算 FAILED —— 标记才是判据，不能凭文案猜")
+    void sameMessageWithoutTagIsStillFailed() {
+        assertThat(RunStatus.of(ctx("暂不支持同比：库内没有去年同期数据"))).isEqualTo(RunStatus.FAILED);
+    }
+
+    @Test
     @DisplayName("空白 errorMessage 视作无错误（避免「空串失败」被记成 FAILED）")
     void blankErrorIsTreatedAsNoError() {
         assertThat(RunStatus.of(ctx("   "))).isEqualTo(RunStatus.SUCCESS);

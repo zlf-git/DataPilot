@@ -91,6 +91,20 @@ def main():
     check('环比 SQL 仍是半开区间', 'dt > ?' in comp_sql and 'dt <= ?' in comp_sql, comp_sql)
     check('环比 SQL 与本期同模板（只有窗口不同）',
           comp_sql == first_sql, comp_sql)
+
+    # QA-10 P2-1：SQL 文本两边逐字相同，光比文本证明不了窗口挪过 —— 参数才是证据。
+    # 本期 [anchor-7, anchor]，环比 [anchor-14, anchor-7]，恰好各差 7 天
+    from datetime import date, timedelta
+    base_params = [str(x) for x in (second.get('params') or [])]
+    comp_params = [str(x) for x in (second.get('comparisonParams') or [])]
+    try:
+        lo, hi = date.fromisoformat(comp_params[0]), date.fromisoformat(comp_params[1])
+        shifted = (date.fromisoformat(base_params[0]) - lo).days == 7 and \
+                  (date.fromisoformat(base_params[1]) - hi).days == 7
+    except (ValueError, IndexError):
+        shifted = False
+    check('环比窗口整体前移 7 天（参数口径，不是文本口径）', shifted,
+          'base=%s comp=%s' % (base_params, comp_params))
     note = second.get('comparisonNote') or ''
     check('环比结论：前 7 天无数据', '前 7 天无数据' in note, note)
     check('answer 同时给出本期与环比',
@@ -116,6 +130,20 @@ def main():
     check('换维度追问 → 提示把条件说全',
           not dim.get('sql') and '多轮追问暂只支持环比' in (dim.get('answer') or ''),
           dim.get('answer', ''))
+
+    print('== 单日题的环比：没有相对窗口就必须拒绝（QA-10 P1-1 回归）==')
+    sid_day = 'sess-day-' + uuid.uuid4().hex[:6]
+    day = ask('10月19日当天的总GMV是多少', sid_day)
+    check('单日题先出数', bool(day.get('sql')), (day.get('sql') or '')[:40])
+    day_mom = ask('那环比呢', sid_day)
+    check('单日题追问环比 → 明确拒绝，不跑第二次查询',
+          not day_mom.get('comparisonSql') and '按天查询' in (day_mom.get('answer') or ''),
+          (day_mom.get('answer') or '')[:60])
+    check('不会把本期值当成「前 7 天」讲出来',
+          '前 7 天' not in (day_mom.get('comparisonNote') or ''),
+          str(day_mom.get('comparisonNote')))
+    check('单日题环比拒绝落 REJECTED（策略拒绝，不是故障）',
+          day_mom.get('status') == 'REJECTED', str(day_mom.get('status')))
 
     print('== 会话自检接口 ==')
     health = get_json('/api/health/session')

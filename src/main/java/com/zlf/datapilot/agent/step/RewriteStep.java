@@ -38,9 +38,6 @@ public class RewriteStep implements AgentStep {
     private static final List<String> ANAPHORA = List.of(
             "那", "呢", "这个", "那个", "它", "上面", "刚才", "前面", "再算一遍", "再来一遍", "重新算一遍", "以上");
 
-    /** 上一轮没窗口时的兜底天数（与评测集「近 7 天」口径一致） */
-    private static final int DEFAULT_WINDOW_DAYS = 7;
-
     /** 追问的长度上限：超过这个长度就当作完整问题，不做补全 */
     private static final int FOLLOW_UP_MAX_CHARS = 12;
 
@@ -67,15 +64,24 @@ public class RewriteStep implements AgentStep {
         boolean mom = question.contains(MOM);
         boolean yoy = question.contains(YOY);
 
-        // 同比先说死：库内只有 7 天数据，同比需要去年同期，硬算只能编
+        // 同比先说死：库内只有 7 天数据，同比需要去年同期，硬算只能编。
+        // 文案里不再引用「最近 N 天」（QA-10 P2-2）：那个 N 以前是 DEFAULT_WINDOW_DAYS 兜底出来的，
+        // 拿默认值当库内事实说给用户听，等于编了一个有据可查的假前提
         if (yoy) {
-            ctx.setErrorMessage("暂不支持同比：库内数据只有最近 " + windowDaysOf(last)
-                    + " 天，没有去年同期数据，无法计算同比");
+            ctx.reject("暂不支持同比：库内没有去年同期数据，无法计算同比", "rewrite");
             return ctx;
         }
 
         if (mom) {
-            int days = windowDaysOf(last);
+            Integer days = last.windowDays();
+            // 上一轮没有相对窗口（单日题 dt = ? / 按天查询）时，环比<b>没有定义</b>（QA-10 P1-1）。
+            // 此前这里兜底成 7 天，而 copyWithOffset 只挪 timeRange、挪不动 filters 里的日期，
+            // 于是环比 SQL 与本期 SQL 完全等价 —— 把本期数字当成「前 7 天」讲出来，静默错数
+            if (days == null || days < 1) {
+                ctx.reject("上一轮是按天查询（dt = 某一天），环比需要「近 N 天」这类时间窗口，"
+                        + "请直接问「近 7 天比前 7 天的…」这样带窗口的问题", "rewrite");
+                return ctx;
+            }
             ctx.setComparisonDays(days);
             ctx.setRewrittenQuestion(last.rewrittenQuestion() + "，环比：与前 " + days + " 天对比");
             log.debug("多轮补全（环比）：session={} 上一轮「{}」→「{}」",
@@ -98,15 +104,10 @@ public class RewriteStep implements AgentStep {
         }
 
         // 带新增修饰的追问：补不出来，拒绝比猜好
-        ctx.setErrorMessage("多轮追问暂只支持环比（如「那环比呢」）。"
-                + "「" + question + "」这类换了维度/时间的追问请把条件说全，例如「10月19日各渠道的GMV是多少」");
+        ctx.reject("多轮追问暂只支持环比（如「那环比呢」）。"
+                + "「" + question + "」这类换了维度/时间的追问请把条件说全，例如「10月19日各渠道的GMV是多少」",
+                "rewrite");
         return ctx;
-    }
-
-    /** 上一轮的窗口天数（没窗口时按 7 天，与评测集口径一致） */
-    private int windowDaysOf(SessionStore.Round last) {
-        Integer days = last.windowDays();
-        return days == null || days < 1 ? DEFAULT_WINDOW_DAYS : days;
     }
 
     /**

@@ -88,3 +88,48 @@ Ticket 01 + Ticket 04
 - **环比那次执行不再单独过语法闸门**：SQL 与本期只差两个日期参数，表/字段已被本轮闸门校验过，
   参数化绑定仍在。若以后环比要换指标/维度，就必须让它重新走一遍闸门。
 - 环比只有「前一个等长窗口」，不支持「上月同期」「年初至今」这类任意基准。
+
+---
+
+## 10b 补丁：QA-10 收口（2026-10-21）
+
+QA-10 判 **不通过**：DoD 6/6 达成，但 **1 条 P1（单日题上环比把本期值当上期值，静默错数）** + 3 条 P2
+（报告在 `QA-10-多轮session-测试报告.md`）。P1 与 P2 全部在本补丁处理。
+
+### P1-1（必修）
+
+**现象**：上一轮是单日题（`10月19日当天的总GMV是多少`，日期在 `filters` 里、没有 `timeRange`）时追问
+「那环比呢」，回答是 `本期：53042.41；环比：前 7 天：53042.41` —— 把本期数字当成上期讲了出来，
+用户会读成「环比持平」。
+
+**根因两处叠加**（报告定位准确）：
+
+1. `RewriteStep` 无条件 `setComparisonDays(windowDaysOf(last))`，而 `windowDaysOf` 在上一轮没有相对窗口时
+   **兜底成 7 天**（`DEFAULT_WINDOW_DAYS`）—— 「与前 7 天对比」这个前提是凭空来的；
+2. `AgentEngine.copyWithOffset` 只挪 `ir.timeRange`，单日题的日期在 `filters` 里，原样保留 ⇒
+   环比 SQL 与本期 SQL 完全等价。
+
+**修法（两层都拦，报告建议的两条路各拦一层）**：
+
+| 层 | 位置 | 行为 |
+|---|---|---|
+| 用户可见文案 | `RewriteStep` | `last.windowDays() == null` 时**不兜底**，直接拒绝：「上一轮是按天查询（dt = 某一天），环比需要「近 N 天」这类时间窗口…」。`DEFAULT_WINDOW_DAYS` 常量删除 |
+| 兜底硬闸 | `AgentEngine.runComparison` | `ir.getTimeRange() == null` 时**不执行第二次查询**，`comparisonNote=环比不可用：上一轮没有相对时间窗口（按天查询）…`。防将来别的入口（HITL/前端）绕过 RewriteStep |
+
+回归锁：`RewriteStepTest.comparisonOnSingleDayQuestionIsRejected`（断言 `comparisonDays` 为 null、
+`rewrittenQuestion` 为 null、`rejectedBy=rewrite`）+ `verify_session.py` 新增 4 项端到端断言
+（`comparisonSql` 为空、「前 7 天」不出现在 `comparisonNote`、`status=REJECTED`）。
+
+### P2 三条
+
+| 报告条目 | 根因 | 落地 |
+|---|---|---|
+| P2-1 环比窗口平移在外部不可观测 | `comparisonSql` 只有 SQL 文本（日期是 `?`），本期与环比**逐字相同**；`verify_session` 那条「同模板」是纯文本比较，恒真 | `AskResponse` 新增 **`comparisonParams`**（`AgentContext.comparisonParams`）。`verify_session` 把判据从「SQL 文本相同」升级为「参数恰好各差 7 天」：实测 `base=[2026-10-12, 2026-10-19]` / `comp=[2026-10-05, 2026-10-12]` |
+| P2-2 「无窗口兜底 7 天」没有来源 | 同 P1-1 根因①，且同比文案会引用这个默认值当库内事实（「库内数据只有最近 7 天」） | 兜底删除；同比文案改为「库内没有去年同期数据，无法计算同比」，不再引用任何窗口天数。`RewriteStepTest.yearOverYearIsRejectedWithReason` 加 `doesNotContain("最近 7 天")` |
+| P2-3 明确拒绝落 FAILED | `RunStatus.of` 只认「闸门结果里有 `=REJECT`」，改写拒绝没有闸门记录 | `AgentContext.reject(reason, by)`：一次写「文案 + 谁拒的」，不提供裸 setter（有文案没标记就会静默落 FAILED）。`RunStatus.of` 见 `rejectedBy` 即 REJECTED。写入点三处：`rewrite`（同比/环比无窗口/换维度）、`identify`（无法识别）、`converter`（跨表维度等生成器拒绝）。LLM 超时/服务异常仍是 FAILED |
+
+**实测**：`mvn -o test` **152/152**；`verify_session` **21/21**（新增环比参数、单日题环比拒绝各一组）；
+`run_eval` PASS（15/15、49/49、探针 PASS、延迟 46.8ms）；`e2e_stub` PASS；`verify_traces` 31/31。
+
+**没动的地方**：`Skill`/`SessionStore` 的 5 轮上限、TTL、会话数上限都没改 —— 报告里「TTL 与 500 会话
+只有单测」这条属于测试覆盖取舍（长跑实测成本高于收益），不列为缺陷处理。

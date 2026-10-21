@@ -44,6 +44,11 @@ public enum RunStatus {
         if (!hasError) {
             return SUCCESS;
         }
+        // 改写/识别/生成器层面的「明确拒绝」没有闸门记录，靠 rejectedBy 认（QA-10 P2-3、QA-11 P2-1）。
+        // 此前只有闸门能落 REJECTED，于是「同比不支持」「那渠道呢补不出来」全被算成系统故障
+        if (ctx.getRejectedBy() != null) {
+            return REJECTED;
+        }
         boolean rejected = ctx.getGateResults() != null
                 && ctx.getGateResults().stream().anyMatch(TraceSpanSupport::isReject);
         return rejected ? REJECTED : FAILED;

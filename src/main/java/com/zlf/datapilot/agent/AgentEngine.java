@@ -189,7 +189,9 @@ public class AgentEngine {
         boolean noMetrics = ir.getMetrics() == null || ir.getMetrics().isEmpty();
         boolean noDims = ir.getDimensions() == null || ir.getDimensions().isEmpty();
         if (noMetrics && noDims) {
-            ctx.setErrorMessage("无法识别查询意图，请换个问法");
+            // 「没听懂」不是系统故障（QA-10 P2-3 / QA-11 P2-1）：它属于策略/能力边界，
+            // 落 REJECTED 才不会把「问得不对」算进故障率
+            ctx.reject("无法识别查询意图，请换个问法", "identify");
             return ctx;
         }
 
@@ -272,7 +274,8 @@ public class AgentEngine {
             ctx.setGeneratedSql(cmd.sql());
             return true;
         } catch (IllegalArgumentException e) {
-            ctx.setErrorMessage(e.getMessage());
+            // 生成器主动拒绝（跨表维度、窗口类型不支持…）：这是「这个问法当前不支持」，不是崩溃
+            ctx.reject(e.getMessage(), "converter");
             return false;
         }
     }
@@ -388,10 +391,20 @@ public class AgentEngine {
      * 代价是环比那次执行不再单独过语法闸门（SQL 文本只差值不同），这一点写进票面「已知边界」。
      */
     private void runComparison(AgentContext ctx, QueryIr ir, int days) {
+        // 兜底第二层（QA-10 P1-1）：RewriteStep 已经拦了「上一轮没有相对窗口」，但别的入口
+        // （HITL 恢复、将来的前端直连）也可能带着一个没有 timeRange 的 IR 走到这里。
+        // 单日题的日期在 filters 里，copyWithOffset 挪不动它 —— 那第二次查询就是本期的复读，
+        // 报出去等于「环比持平」。这里直接判不可用，不执行。
+        if (ir == null || ir.getTimeRange() == null) {
+            ctx.setComparisonNote("环比不可用：上一轮没有相对时间窗口（按天查询），请用「近 N 天」这类问题再问一次");
+            return;
+        }
         QueryIr prev = copyWithOffset(ir, days);
         try {
             SqlCommand cmd = irToSqlConverter.convert(prev);
             ctx.setComparisonSql(cmd.sql());
+            // 参数是「窗口真的挪了」的唯一外部可观测证据（SQL 文本两边逐字相同，日期都是 ?）
+            ctx.setComparisonParams(cmd.params());
             AgentContext probe = new AgentContext();
             probe.setTraceId(ctx.getTraceId());
             probe.setSqlCommand(cmd);

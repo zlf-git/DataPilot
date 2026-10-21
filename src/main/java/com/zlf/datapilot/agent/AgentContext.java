@@ -67,14 +67,28 @@ public class AgentContext {
     /** 最终给用户的自然语言解释 */
     private String answer;
 
-    /** 建议的图表类型：bar/line/pie/table/card */
-    private String chartType = "table";
+    /**
+     * 建议的图表类型：metric/bar/line/table。<b>初值 null</b>（QA-11 P2-2）。
+     *
+     * <p>以前初值是 {@code "table"}，于是失败/拒绝的响应也会带着 {@code chartType=table} 而
+     * {@code reportHtml=null} —— 前端按 chartType 决定渲染就会拿到一张空图，
+     * 而它真正该表达的是「这次没有图表」。null 才表示「没有」，有值才表示「有，且是这个形状」。
+     */
+    private String chartType;
 
     /** 生成的 HTML 报告（P1） */
     private String reportHtml;
 
     /** 失败信息（任一节点失败时） */
     private String errorMessage;
+
+    /**
+     * 谁拒绝了这次查询（Ticket 10/11 的 QA 收口）：{@code rewrite} / {@code identify} / {@code converter}。
+     * 非 null 表示「策略生效、不是故障」，{@link RunStatus#of} 据此落 REJECTED。
+     *
+     * <p><b>只能通过 {@link #reject(String, String)} 写</b>，不提供裸 setter —— 见该方法注释。
+     */
+    private String rejectedBy;
 
     /** 闸门执行结果（链路透明回显，GateChain 按序追加） */
     private List<String> gateResults = new ArrayList<>();
@@ -91,8 +105,17 @@ public class AgentContext {
     /** 环比那次查询的结果（为空表示前 N 天无数据） */
     private List<Map<String, Object>> comparisonRows = new ArrayList<>();
 
-    /** 环比的文字结论：前 N 天无数据 / 前 N 天的值 */
+    /** 环比的文字结论：前 N 天无数据 / 前 N 天的值 / 环比不可用的原因 */
     private String comparisonNote;
+
+    /**
+     * 环比那次查询的绑定参数（Ticket 10 QA P2-1）。
+     *
+     * <p>光有 {@code comparisonSql} 证明不了窗口挪过 —— 日期是 {@code ?}，本期和环比的 SQL 文本
+     * 逐字相同。参数才是「挪了几天」的唯一外部可观测证据（本期 {@code [anchor-days, anchor]}，
+     * 环比 {@code [anchor-2d, anchor-d]}）。
+     */
+    private List<Object> comparisonParams = new ArrayList<>();
 
     /**
      * 预览 ID（Ticket 12）：非空表示这次运行是「只校验不执行」的预览，值是服务端快照的键。
@@ -285,6 +308,30 @@ public class AgentContext {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
+    }
+
+    /**
+     * 明确拒绝（不是故障）：同时写错误文案与「谁拒的」，两者要么都有、要么都没有。
+     *
+     * <p>不提供 {@code setRejectedBy} 裸 setter，是因为「有文案但没标记」会让这次运行静默落进
+     * FAILED（QA-10 P2-3 / QA-11 P2-1 实测：4 类明确拒绝全部被算成失败）。把两个字段捆在一个方法里，
+     * 就不存在「只写一半」的中间状态。
+     */
+    public void reject(String reason, String by) {
+        this.errorMessage = reason;
+        this.rejectedBy = by;
+    }
+
+    public String getRejectedBy() {
+        return rejectedBy;
+    }
+
+    public List<Object> getComparisonParams() {
+        return comparisonParams;
+    }
+
+    public void setComparisonParams(List<Object> comparisonParams) {
+        this.comparisonParams = comparisonParams == null ? new ArrayList<>() : comparisonParams;
     }
 
     public Integer getComparisonDays() {
