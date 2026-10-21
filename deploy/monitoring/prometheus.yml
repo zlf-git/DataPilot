@@ -1,0 +1,52 @@
+# Prometheus 抓取配置（P1-B）
+#
+# 目标全部走 compose 网络 hadoop-net 的容器名，不写宿主机 IP —— 容器重启换 IP 时不用改配置。
+# Flink 的 9249 需要 jobmanager/taskmanager 带上 prometheus reporter（见 data-services-compose.yml 的 FLINK_PROPERTIES）。
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: datapilot
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # 宿主机指标（node-exporter 直通宿主 /proc /sys）
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # 容器指标（CPU/内存/网络，按 container 维度）
+  # 暂缺：cadvisor 镜像在本机拉不到（gcr 直连超时、镜像源对 gcr 转发 403），见 monitoring-compose.yml 注释。
+  # 恢复时取消注释即可，面板里对应那一行会自己出现数据。
+  # - job_name: cadvisor
+  #   static_configs:
+  #     - targets: ["cadvisor:8080"]
+
+  # Kafka broker 指标
+  - job_name: kafka
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+
+  # StarRocks：FE 8030 / BE 8040 都自带 /metrics，不用装 exporter
+  - job_name: starrocks-fe
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["sr-ai-analysis:8030"]
+
+  - job_name: starrocks-be
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["sr-ai-analysis:8040"]
+
+  # Flink：1.20 官方镜像内置 prometheus reporter，端口由 metrics.reporter.prom.port 指定
+  - job_name: flink-jobmanager
+    static_configs:
+      - targets: ["flink-jobmanager:9249"]
+
+  - job_name: flink-taskmanager
+    static_configs:
+      - targets: ["flink-taskmanager:9249"]

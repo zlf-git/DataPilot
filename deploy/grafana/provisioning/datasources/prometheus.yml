@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# Grafana 数据源（P1-B）：只有一个 Prometheus，uid 固定成 prometheus，
+# 面板 JSON 里直接引用这个 uid，导入时不需要再选数据源。
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 15s

@@ -1,0 +1,86 @@
+version: "3.9"
+
+# 监控栈（P1-B）：Prometheus + exporters，Grafana 复用 platform-ui-compose.yml 里那个容器。
+#
+# 抓取目标见 deploy/monitoring/prometheus.yml。这里只管「谁来暴露指标」：
+#   node-exporter  宿主机 CPU/内存/磁盘
+#   cadvisor       容器级 CPU/内存/网络
+#   kafka-exporter Kafka broker / topic 指标
+# StarRocks 与 Flink 自带 /metrics，不需要额外 exporter，只在 prometheus.yml 里登记。
+#
+# 注意：cadvisor 在 Windows Docker Desktop 上依赖 cgroup v2 透传，起不来也不影响其余目标；
+# prometheus.yml 里它单独成一个 job，挂了只影响那一块面板。
+
+networks:
+  hadoop-net:
+    external: true
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    hostname: prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - "./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "D:/starrocks/data/prometheus:/prometheus"
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    hostname: node-exporter
+    ports:
+      - "9100:9100"
+    command:
+      - "--path.rootfs=/host"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    volumes:
+      - "/:/host:ro"   # Windows Docker Desktop 不支持 rslave，加了会报 "not a shared or slave mount"
+    networks:
+      - hadoop-net
+    restart: unless-stopped
+
+  # cadvisor 停用：官方镜像只在 gcr.io，本机 gcr.io 直连超时、daocloud 对 gcr 转发 403、
+  # 1ms/rat.dev 两个源 DNS 都不通，试着从 Docker Hub 拉 cadvisor/cadvisor 同样 404。
+  # 没有它不影响链路监控（宿主机指标走 node-exporter，StarRocks/Flink/Kafka 都有原生指标），
+  # 只少了「容器级 CPU/内存」这一块。等镜像源能拉通再取消注释。
+  # cadvisor:
+  #   image: gcr.io/cadvisor/cadvisor:v0.49.1
+  #   container_name: cadvisor
+  #   hostname: cadvisor
+  #   ports:
+  #     - "8082:8080"
+  #   privileged: true
+  #   devices:
+  #     - "/dev/kmsg"
+  #   volumes:
+  #     - "/:/rootfs:ro"
+  #     - "/var/run:/var/run:ro"
+  #     - "/sys:/sys:ro"
+  #     - "/var/lib/docker/:/var/lib/docker:ro"
+  #     - "/dev/disk/:/dev/disk:ro"
+  #   networks:
+  #     - hadoop-net
+  #   restart: unless-stopped
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.7.0
+    container_name: kafka-exporter
+    hostname: kafka-exporter
+    ports:
+      - "9308:9308"
+    command:
+      - "--kafka.server=kafka-ai-analysis:9092"
+      - "--web.listen-address=:9308"
+    networks:
+      - hadoop-net
+    restart: unless-stopped

@@ -58,6 +58,9 @@ services:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 8
+        # P1-B 监控：1.20 官方镜像内置 prometheus reporter，把指标暴露出来再让 Prometheus 抓
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
     volumes:
       - "D:/starrocks/lib/paimon-flink-1.20-1.0.1.jar:/opt/flink/lib/paimon-flink-1.20-1.0.1.jar"
       - "D:/starrocks/lib/mysql-connector-j-8.0.33.jar:/opt/flink/lib/mysql-connector-j-8.0.33.jar"
@@ -67,6 +70,10 @@ services:
       - "D:/starrocks/lib/hadoop-client-api-3.3.3.jar:/opt/flink/lib/hadoop-client-api-3.3.3.jar"
       - "D:/starrocks/lib/hadoop-client-runtime-3.3.3.jar:/opt/flink/lib/hadoop-client-runtime-3.3.3.jar"
       - "D:/starrocks/lib/commons-logging-1.2.jar:/opt/flink/lib/commons-logging-1.2.jar"
+      # SR sink 连接器：job5 流写 SR / job6 批重建都靠它。版本必须与 Dinky 侧
+      # /opt/dinky/extends/flink1.20/flink-connector-starrocks-1.2.14_flink-1.20.jar 完全一致，
+      # 否则作业图在 Dinky 侧序列化、在 TM 侧反序列化时报 InvalidClassException（serialVersionUID 不同）。
+      - "D:/starrocks/lib/flink-connector-starrocks-1.2.14_flink-1.20.jar:/opt/flink/lib/flink-connector-starrocks-1.2.14_flink-1.20.jar"
     networks:
       - hadoop-net
     restart: unless-stopped
@@ -81,6 +88,9 @@ services:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
         taskmanager.numberOfTaskSlots: 8
+        # P1-B 监控：1.20 官方镜像内置 prometheus reporter，把指标暴露出来再让 Prometheus 抓
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
     volumes:
       - "D:/starrocks/lib/paimon-flink-1.20-1.0.1.jar:/opt/flink/lib/paimon-flink-1.20-1.0.1.jar"
       - "D:/starrocks/lib/mysql-connector-j-8.0.33.jar:/opt/flink/lib/mysql-connector-j-8.0.33.jar"
@@ -90,6 +100,10 @@ services:
       - "D:/starrocks/lib/hadoop-client-api-3.3.3.jar:/opt/flink/lib/hadoop-client-api-3.3.3.jar"
       - "D:/starrocks/lib/hadoop-client-runtime-3.3.3.jar:/opt/flink/lib/hadoop-client-runtime-3.3.3.jar"
       - "D:/starrocks/lib/commons-logging-1.2.jar:/opt/flink/lib/commons-logging-1.2.jar"
+      # SR sink 连接器：job5 流写 SR / job6 批重建都靠它。版本必须与 Dinky 侧
+      # /opt/dinky/extends/flink1.20/flink-connector-starrocks-1.2.14_flink-1.20.jar 完全一致，
+      # 否则作业图在 Dinky 侧序列化、在 TM 侧反序列化时报 InvalidClassException（serialVersionUID 不同）。
+      - "D:/starrocks/lib/flink-connector-starrocks-1.2.14_flink-1.20.jar:/opt/flink/lib/flink-connector-starrocks-1.2.14_flink-1.20.jar"
     networks:
       - hadoop-net
     restart: unless-stopped

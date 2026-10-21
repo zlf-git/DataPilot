@@ -18,8 +18,16 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - GF_USERS_DEFAULT_LANGUAGE=zh-Hans
+      # P1-B：监控面板是本机自用的只读看板，允许匿名以 Viewer 身份查看，省掉一次登录；
+      # 写配置（改面板/加数据源）仍然要 admin。
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SECURITY_ALLOW_EMBEDDING=true
     volumes:
       - "D:/starrocks/data/grafana:/var/lib/grafana"
+      # 数据源与面板走 provisioning：改仓库里的文件 + 重启容器即生效，不靠 UI 手点
+      - "./grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "./grafana/dashboards:/var/lib/grafana/dashboards:ro"
     networks:
       - hadoop-net
     restart: unless-stopped
@@ -37,15 +45,35 @@ services:
       - hadoop-net
     restart: unless-stopped
 
-  go-view:
+  # go-view 已停用（P1-A 落地记录）：它只有静态 dist，编辑器要 go-view-server（Go 后端），
+  # 本机拉不到镜像 → 打开就是登录页、进不去。容器保留着不动，改由 dp-web 接管 8080。
+  # 想恢复就在 go-view-server 起来后把这段取消注释，并把 dp-web 的端口让出去。
+  # go-view:
+  #   image: docker.m.daocloud.io/library/nginx:alpine
+  #   container_name: go-view
+  #   hostname: go-view
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - "D:/starrocks/go-view/dist:/usr/share/nginx/html:ro"
+  #     - "D:/starrocks/go-view/nginx.conf:/etc/nginx/conf.d/default.conf:ro"
+  #   networks:
+  #     - hadoop-net
+  #   restart: unless-stopped
+
+  # 平台入口：托管 DataPilot 前端（含经营大屏），并把 /api 反代到宿主机 Spring Boot。
+  # 静态目录直挂 build 产物：前端重新构建后刷新页面即生效，不用重启容器。
+  dp-web:
     image: docker.m.daocloud.io/library/nginx:alpine
-    container_name: go-view
-    hostname: go-view
+    container_name: dp-web
+    hostname: dp-web
     ports:
       - "8080:80"
     volumes:
-      - "D:/starrocks/go-view/dist:/usr/share/nginx/html:ro"
-      - "D:/starrocks/go-view/nginx.conf:/etc/nginx/conf.d/default.conf:ro"
+      - "${DP_DIST:-C:/Users/zlf/Desktop/DataPilot/frontend/dist}:/usr/share/nginx/html:ro"
+      - "D:/starrocks/dp-web/nginx.conf:/etc/nginx/conf.d/default.conf:ro"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - hadoop-net
     restart: unless-stopped

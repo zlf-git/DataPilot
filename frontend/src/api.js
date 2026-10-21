@@ -124,6 +124,14 @@ export const api = {
   gateConfigs: () => request('/api/gate-config'),
   putGateConfig: (g) => request('/api/gate-config', { method: 'PUT', body: g }),
 
+  // ---- 经营大屏（P1-A，匿名可读；dt 省略 = 后端取 ADS 最新一天）----
+  dashboardSummary: (dt) => request(`/api/dashboard/summary${dt ? `?dt=${encodeURIComponent(dt)}` : ''}`),
+  dashboardTrend: (days = 7) => request(`/api/dashboard/trade-trend?days=${days}`),
+  dashboardChannel: (dt) => request(`/api/dashboard/channel${dt ? `?dt=${encodeURIComponent(dt)}` : ''}`),
+  dashboardRegion: (dt) => request(`/api/dashboard/region${dt ? `?dt=${encodeURIComponent(dt)}` : ''}`),
+  dashboardProduct: (dt, limit = 8) =>
+    request(`/api/dashboard/product?limit=${limit}${dt ? `&dt=${encodeURIComponent(dt)}` : ''}`),
+
   // ---- 运维/链路 ----
   healthMetadata: () => request('/api/health/metadata'),
   traces: (limit = 20, sessionId) =>

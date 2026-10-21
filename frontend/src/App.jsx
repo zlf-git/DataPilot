@@ -6,12 +6,14 @@ import {
   DatabaseOutlined,
   SlidersOutlined,
   KeyOutlined,
+  FundOutlined,
 } from '@ant-design/icons'
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import AskPage from './pages/AskPage.jsx'
 import MetricsPage from './pages/MetricsPage.jsx'
 import MetadataPage from './pages/MetadataPage.jsx'
 import GateConfigPage from './pages/GateConfigPage.jsx'
+import DashboardPage from './pages/DashboardPage.jsx'
 import { api, auth, UNAUTHORIZED_EVENT } from './api.js'
 
 const { Header, Sider, Content } = Layout
@@ -21,6 +23,7 @@ const MENU = [
   { key: '/metrics', icon: <ExperimentOutlined />, label: <Link to="/metrics">指标管理</Link> },
   { key: '/metadata', icon: <DatabaseOutlined />, label: <Link to="/metadata">元数据 / 白名单</Link> },
   { key: '/gate-config', icon: <SlidersOutlined />, label: <Link to="/gate-config">闸门配置</Link> },
+  { key: '/dashboard', icon: <FundOutlined />, label: <Link to="/dashboard">经营大屏</Link> },
 ]
 
 /**
@@ -116,6 +119,12 @@ export default function App() {
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
   }, [])
 
+  // 经营大屏是全屏看板：不套 Header/Sider，否则投到大屏上白边和菜单都很碍眼。
+  // 这里早退放在所有 hooks 之后，hooks 调用顺序不变。
+  if (location.pathname.startsWith('/dashboard')) {
+    return <DashboardPage />
+  }
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Header
@@ -177,6 +186,7 @@ export default function App() {
             <Route path="/metrics" element={<MetricsPage />} />
             <Route path="/metadata" element={<MetadataPage />} />
             <Route path="/gate-config" element={<GateConfigPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="*" element={<Navigate to="/ask" replace />} />
           </Routes>
         </Content>
