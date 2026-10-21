@@ -1,0 +1,18 @@
+{
+  "question": "10月19日各渠道的支付转化率分别是多少？按转化率从高到低排序",
+  "ir": {
+    "question": "10月19日各渠道的支付转化率分别是多少？按转化率从高到低排序",
+    "metrics": [
+      { "metricId": "pay_conversion_rate" }
+    ],
+    "dimensions": [
+      { "field": "channel_name" }
+    ],
+    "filters": [
+      { "field": "dt", "op": "EQ", "value": "2026-10-19" }
+    ],
+    "orderBy": [
+      { "field": "pay_conversion_rate", "direction": "desc" }
+    ]
+  }
+}

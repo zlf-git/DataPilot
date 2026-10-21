@@ -1,7 +1,7 @@
 {
-  "question": "10月19日总GMV是多少",
+  "question": "10月19日当天的总GMV是多少",
   "ir": {
-    "question": "10月19日总GMV是多少",
+    "question": "10月19日当天的总GMV是多少",
     "metrics": [
       { "metricId": "gmv_total" }
     ],

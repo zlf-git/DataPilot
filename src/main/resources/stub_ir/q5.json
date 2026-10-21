@@ -1,0 +1,13 @@
+{
+  "question": "电脑外设类目下有哪些商品",
+  "ir": {
+    "question": "电脑外设类目下有哪些商品",
+    "metrics": [],
+    "dimensions": [
+      { "field": "product_name" }
+    ],
+    "filters": [
+      { "field": "category_name", "op": "EQ", "value": "电脑外设" }
+    ]
+  }
+}

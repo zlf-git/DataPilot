@@ -1,0 +1,14 @@
+{
+  "question": "近7天里总GMV最高的是哪一天",
+  "ir": {
+    "question": "近7天里总GMV最高的是哪一天",
+    "metrics": [],
+    "dimensions": [
+      { "field": "dt" }
+    ],
+    "orderBy": [
+      { "field": "total_gmv", "direction": "desc" }
+    ],
+    "limit": 1
+  }
+}

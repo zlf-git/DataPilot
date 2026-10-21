@@ -1,0 +1,16 @@
+{
+  "question": "近7天GMV最高的渠道是哪个",
+  "ir": {
+    "question": "近7天GMV最高的渠道是哪个",
+    "metrics": [
+      { "metricId": "gmv_channel" }
+    ],
+    "dimensions": [
+      { "field": "channel_name" }
+    ],
+    "orderBy": [
+      { "field": "gmv_channel", "direction": "desc" }
+    ],
+    "limit": 1
+  }
+}

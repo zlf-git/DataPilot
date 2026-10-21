@@ -1,0 +1,13 @@
+{
+  "question": "10月19日小程序渠道的GMV是多少",
+  "ir": {
+    "question": "10月19日小程序渠道的GMV是多少",
+    "metrics": [
+      { "metricId": "gmv_channel" }
+    ],
+    "filters": [
+      { "field": "dt", "op": "EQ", "value": "2026-10-19" },
+      { "field": "channel_name", "op": "EQ", "value": "小程序" }
+    ]
+  }
+}
