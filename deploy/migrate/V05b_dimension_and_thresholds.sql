@@ -1,8 +1,8 @@
 -- Ticket 05 补丁（QA-03 P2-4 / P2-5）：维度字典补齐 + 闸门阈值按真实能力收口
--- 幂等：可重复执行。执行方式：
---   docker exec -i mysql-ai-analysis mysql -uroot -proot123 --default-character-set=utf8mb4 < deploy/migrate/V05b_dimension_and_thresholds.sql
-
-USE data_agent;
+-- 幂等：可重复执行。目标库由调用方指定（不再硬编码，QA-05 P2-7）：
+--   docker exec -i mysql-ai-analysis mysql -uroot -proot123 --default-character-set=utf8mb4 \
+--     -D data_agent < deploy/migrate/V05b_dimension_and_thresholds.sql
+--   不带 -D 执行会以 "No database selected" 失败，而不是悄悄作用到生产库。
 
 -- 1) 维度字典补 3 个真维度（编码类字段），此前只有 6 个唯一字段，
 --    DETAIL 落到 channel / province / product_id 就判「均不在维度字典」。

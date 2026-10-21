@@ -101,15 +101,10 @@ public class ExistenceGate implements Gate {
             }
         }
 
-        // 占比语义的分子/分母也必须是真实指标（Ticket 03 引入；计算由 05 落地）
-        if (ir.getRatio() != null) {
-            for (String mid : new String[]{ir.getRatio().getNumerator(), ir.getRatio().getDenominator()}) {
-                if (mid == null || !cache.metricIds().contains(lc(mid))) {
-                    return GateResult.reject("占比分子/分母指标不存在或超出可查询范围：" + mid);
-                }
-            }
-        }
-
+        // 关于 IR 的 ratio 字段（QA-05 P2-2）：这里**故意不再校验**其分子/分母是否为真实指标。
+        // ratio 语义已由 Ticket 05 整体停用（改用 metric_type=composite），该判断属于「已停用写法」而非
+        // 「标识符不存在」，归 IrToSqlConverter.convert() 统一拒绝并给出可执行下一步。此前在本闸门先拦，
+        // 用户看到的是「指标不存在：gmv」，会去查指标名而不是改写法。
         return GateResult.ok();
     }
 

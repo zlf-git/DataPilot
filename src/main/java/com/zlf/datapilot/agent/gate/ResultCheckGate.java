@@ -41,6 +41,13 @@ public class ResultCheckGate implements Gate {
             return GateResult.okWarning("无数据：查询结果为空，请检查筛选条件");
         }
 
+        // 单行全空也算无数据（QA-05 P2-1 延伸）：SUM/AVG 在空集上返回 1 行 NULL，
+        // rows 非空会绕过上面的判断，用户同样只看到 {"gmv_total": null} 这种不可读结果。
+        Map<String, Object> only = rows.size() == 1 ? rows.get(0) : null;
+        if (only != null && !only.isEmpty() && only.values().stream().allMatch(v -> v == null)) {
+            return GateResult.okWarning("无数据：查询结果为空（聚合返回空值），请检查筛选条件");
+        }
+
         int maxRows = cache.gateThreshold("max_rows", 1000);
         if (rows.size() > maxRows) {
             ctx.setQueryResult(new ArrayList<>(rows.subList(0, maxRows)));

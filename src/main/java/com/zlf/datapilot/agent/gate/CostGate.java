@@ -8,6 +8,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -52,12 +54,22 @@ public class CostGate implements Gate {
         }
 
         // join 表数 = IR 涉及的去重表数 - 1（基础版；单表=0 不算 join）
+        // 跨表占比的分母表也计入（QA-05 P2-4）：标量子查询会真的读第二张表，只数 metrics 的 table_name
+        // 会得出 joinCount=0，max_join 对复合指标形同虚设，而且闸门回显的「代价=PASS」是虚假安全感。
         Set<String> tables = new HashSet<>();
+        Map<String, String> metricTables = cache.metricTables();
+        Map<String, String> denominatorTables = cache.metricDenominatorTables();
         if (ir.getMetrics() != null) {
             for (MetricRef m : ir.getMetrics()) {
-                String t = cache.metricTables().get(m.getMetricId());
+                String mid = m.getMetricId() == null ? null : m.getMetricId().trim().toLowerCase(Locale.ROOT);
+                String t = metricTables.get(mid);
                 if (t != null) {
-                    tables.add(t);
+                    tables.add(t.trim().toLowerCase(Locale.ROOT));
+                }
+                String den = denominatorTables.get(mid);
+                if (den != null) {
+                    // 同表分母（den == t）在这里自然去重，不会被误算成一次 join
+                    tables.add(den.trim().toLowerCase(Locale.ROOT));
                 }
             }
         }

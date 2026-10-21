@@ -303,7 +303,11 @@ public class IrToSqlConverter {
         return new String[]{braces(parts[0].trim()), braces(parts[1].trim())};
     }
 
-    /** 去掉包裹的括号：SUM(x) 与 (SUM(x)) 等价，防止元数据里多写一层括号导致后续判断走偏 */
+    /** 去掉包裹的括号：SUM(x) 与 (SUM(x)) 等价，防止元数据里多写一层括号导致后续判断走偏。
+     *  <p>这是**读取端宽容**，不是写入端契约：{@code MetadataService.RATIO_PATTERN} 只接受不带外括号的
+     *  「聚合/聚合」，正常路径写不进 {@code (SUM(a))/(SUM(b))}（QA-05 P2-3 实测该写入被 400 拒绝）。
+     *  此处保留兼容是为了兜住手工改库 / 历史迁移产生的数据，不让生成器因为它们多一层括号就判口径非法。
+     *  契约以 {@code docs/执行模块.md}「指标口径写法」为准，两边不再分叉。 */
     private String braces(String s) {
         String out = s;
         while (out.startsWith("(") && out.endsWith(")") && out.length() > 2) {

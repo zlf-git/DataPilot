@@ -56,7 +56,7 @@ INSERT IGNORE INTO field_metadata (table_name, field_name, field_type, field_com
 --   ① 同表比值：metric_sql 直接写 A/B（如 pay_rate）→ 生成器输出 ROUND(A/B,4)
 --   ② 跨表比值：metric_sql 只写分子，分母填 denominator_table + denominator_sql
 --      （如 gmv_channel_ratio：分子=渠道表 SUM(gmv)，分母=总览表 SUM(total_gmv)）
-INSERT IGNORE INTO metric_def
+INSERT INTO metric_def
 (metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status,
  denominator_table, denominator_sql) VALUES
 ('gmv_total',           '总GMV',       '总成交额,总交易额,总销售额', '电商部',   'SUM(total_gmv)',             'simple',    'ads_trade_overview_di',    'dt', '数据开发', '启用', NULL, NULL),
@@ -72,15 +72,25 @@ INSERT IGNORE INTO metric_def
 ('pay_rate',            '支付率',       '下单支付率,订单支付率',     '电商部',   'SUM(paid_order_cnt)/SUM(total_order_cnt)', 'composite', 'ads_trade_overview_di', 'dt', '数据开发', '启用', NULL, NULL),
 ('pay_conversion_rate', '支付转化率',   '下单转支付率,成交转化率',   '渠道运营部','SUM(paid_order_cnt)/SUM(visit_uv)', 'composite', 'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用', NULL, NULL),
 ('gmv_channel_ratio',   '渠道GMV占比',  '渠道占比,GMV占比,渠道GMV占总GMV比例', '渠道运营部','SUM(gmv)',          'composite', 'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用',
- 'ads_trade_overview_di', 'SUM(total_gmv)');
-
--- 3b. 口径修正（Ticket 05）：INSERT IGNORE 不会更新已存在的行，用显式 UPDATE 保证 seed 可重复执行且口径一致
---   ① pay_conversion_rate 由「支付订单/订单数」改为「支付订单/访客数」：与 ADS 表内既有列 pay_conversion_rate
---      （0.1/0.1/0.075 = paid_order_cnt/visit_uv）同口径；订单→支付的比率已由 pay_rate 覆盖，两指标不重复
-UPDATE metric_def
-   SET metric_sql = 'SUM(paid_order_cnt)/SUM(visit_uv)', metric_type = 'composite',
-       denominator_table = NULL, denominator_sql = NULL
- WHERE metric_id = 'pay_conversion_rate';
+ 'ads_trade_overview_di', 'SUM(total_gmv)')
+-- 3b. 幂等且**收敛**（QA-05 P2-6）：改用 ON DUPLICATE KEY UPDATE，重跑 seed 会把 13 条指标的口径、
+--     类型、主表、分母两列全部拉回基线；此前用 INSERT IGNORE，手工改坏的 gmv_channel_ratio 复位不了，
+--     只有 pay_conversion_rate 因为额外写了 UPDATE 才能拉回。其余元数据表（semantic_model/field_metadata/
+--     metric_table/dimension_def）仍只补缺不纠错——它们没有「口径被改坏」的同等风险，且不覆盖人工调整。
+--     pay_conversion_rate 的口径裁定（访客→支付，见 docs/评测集.md §5）已内联在上面的 VALUES 里，
+--     不再需要单独的 UPDATE。
+ON DUPLICATE KEY UPDATE
+    metric_name       = VALUES(metric_name),
+    metric_alias      = VALUES(metric_alias),
+    department        = VALUES(department),
+    metric_sql        = VALUES(metric_sql),
+    metric_type       = VALUES(metric_type),
+    table_name        = VALUES(table_name),
+    dimensions        = VALUES(dimensions),
+    owner             = VALUES(owner),
+    status            = VALUES(status),
+    denominator_table = VALUES(denominator_table),
+    denominator_sql   = VALUES(denominator_sql);
 
 
 -- 4. 指标-表关联（多表指标在此展开，供存在性闸门查「指标在哪些表可算」）

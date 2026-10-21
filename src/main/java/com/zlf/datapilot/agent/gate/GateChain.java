@@ -3,6 +3,7 @@ package com.zlf.datapilot.agent.gate;
 import com.zlf.datapilot.agent.AgentContext;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,15 +29,22 @@ public class GateChain {
 
     /**
      * 执行某阶段的所有闸门，任一不通过立即返回该闸门的 reject 结果。
+     * 全部通过时把各闸门带的 warning 合并返回（QA-05 P2-1：此前一律 return ok()，
+     * ResultCheckGate 的「无数据」提示永远到不了 AgentEngine，用户只看到空表）。
      */
     public GateResult runPhase(Gate.Phase phase, AgentContext ctx) {
+        List<String> warnings = new ArrayList<>();
         for (Gate gate : byPhase.getOrDefault(phase, List.of())) {
             GateResult r = gate.check(ctx);
-            ctx.addGateResult(gate.name() + "=" + (r.isPass() ? "PASS" : "REJECT"));
+            ctx.addGateResult(gate.name() + "=" + (r.isPass() ? "PASS" : "REJECT")
+                    + (r.isPass() && r.getWarning() != null ? "(WARN)" : ""));
             if (!r.isPass()) {
                 return r;
             }
+            if (r.getWarning() != null) {
+                warnings.add(r.getWarning());
+            }
         }
-        return GateResult.ok();
+        return warnings.isEmpty() ? GateResult.ok() : GateResult.okWarning(String.join("；", warnings));
     }
 }
