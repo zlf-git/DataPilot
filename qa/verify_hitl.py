@@ -248,6 +248,63 @@ def main():
     check('执行后给出环比参数（窗口前移的外部证据）',
           len(ex6.get('comparisonParams') or []) == 2, str(ex6.get('comparisonParams')))
 
+    print('== ⑨b QA-12 三条守卫：limit 下界 / 值形状 / 维度重复 ==')
+    pv3 = preview(QUESTION, 'hitl-guard-' + uuid.uuid4().hex[:8])
+    pid3 = pv3.get('previewId') or ''
+    base_ir = pv3.get('ir') or {}
+
+    def edited(**kw):
+        import copy
+        ir = copy.deepcopy(base_ir)
+        ir.update(kw)
+        return ir
+
+    # P2-1：limit 改 0 / 负数 → 编辑层直接拒绝（不能「回显改成 0、实际跑 1000」）
+    for bad in (0, -5):
+        r0 = execute(pid3, edited(limit=bad))
+        check('limit=%d 被编辑层拒绝（不静默放大到上限）' % bad,
+              r0.get('status') == 'REJECTED'
+              and any('正整数' in x for x in (r0.get('structuralChanges') or []))
+              and (r0.get('rows') or []) == [],
+              '%s %s' % (r0.get('status'), (r0.get('structuralChanges') or [''])[0][:40]))
+
+    # 合法正数仍能执行
+    r10 = execute(pid3, edited(limit=10))
+    check('limit=10 仍可执行且 SQL 的 LIMIT 就是 10',
+          r10.get('status') == 'SUCCESS' and 'LIMIT 10' in (r10.get('sql') or ''),
+          '%s %s' % (r10.get('status'), (r10.get('sql') or '')[-30:]))
+
+    # P2-2：值改成数组 / 对象 → 编辑层拒绝，而不是把 SQL 发到数据源再报「数据源拒绝」
+    for shape, label in ((["小程序", "APP"], '数组'), ({"a": 1}, '对象')):
+        ir = edited()
+        ir['filters'][1]['value'] = shape
+        rv = execute(pid3, ir)
+        check('过滤值改成%s被编辑层拒绝（不伪装成数据源故障）' % label,
+              rv.get('status') == 'REJECTED'
+              and any('标量' in x for x in (rv.get('structuralChanges') or [])),
+              '%s %s' % (rv.get('status'), (rv.get('structuralChanges') or [''])[0][:40]))
+
+    # P3-6：维度重复 → 不报错，去重后只 GROUP BY 一次
+    ir_dup = edited()
+    ir_dup['dimensions'] = [{'field': 'channel_name'}, {'field': 'channel_name'}]
+    rd = execute(pid3, ir_dup)
+    rd_sql = (rd.get('sql') or '').upper()
+    # 判据只盯 GROUP BY 那一句：channel_name 在 WHERE/ORDER BY/别名里都会出现，数总次数会假红
+    check('重复维度被去重（GROUP BY 只出现一次，没有 GROUP BY a, a）',
+          rd.get('status') == 'SUCCESS'
+          and rd_sql.count('GROUP BY') == 1
+          and 'GROUP BY CHANNEL_NAME, CHANNEL_NAME' not in rd_sql,
+          '%s %s' % (rd.get('status'), (rd.get('sql') or '')[-70:]))
+
+    # P3-5：结构性拒绝时不再同时回显 edits（读起来像「部分应用」）
+    check('结构性拒绝时 edits 为空（不做部分应用）',
+          (r0.get('edits') or []) == [], str(r0.get('edits')))
+
+    # P3-1：有效期文案不再把短 TTL 说成「1 分钟」
+    expired = execute('not-a-real-preview-id')
+    check('过期文案带有效期单位（ttlText 不做分钟向上取整）',
+          '有效' in (expired.get('answer') or ''), expired.get('answer', ''))
+
     print('== ⑩ 落库口径与基线 ==')
     health = get_json('/api/health/hitl')
     check('previews >= 1', health.get('previews', 0) >= 1, str(health.get('previews')))

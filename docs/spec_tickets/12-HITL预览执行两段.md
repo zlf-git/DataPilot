@@ -117,3 +117,43 @@ mvn 已退出）测到 **51.3 ms** —— 说明那 20ms 是同时跑着 mvn/容
 - **PREVIEW / REPLAN 是第三、第四态**：任何按 `SUCCESS/FAILED` 二分的统计（成功率、故障率）都要显式处理它们，
   否则会把「没执行的预览」算成成功、把「编辑越界」算成失败。这两条值已经在 `SpanStatus`/`RunStatus` 里，
   没有新增旁路字段。
+
+---
+
+## 12b 补丁：QA-12 评审收口（2026-10-21）
+
+评审结论 **PASS**（票面 5 项任务 / 3 条验收 / 2 条测试要求全达成），无 P0/P1；新记 **3 条 P2 + 7 条 P3**。
+本轮处置：**3 条 P2 全修，7 条 P3 修 5 条、披露 2 条**。
+
+### 修掉的（都带单测或脚本断言）
+
+| 编号 | 问题 | 修法 |
+|---|---|---|
+| **P2-1** | `limit` 只设上界不设下界：改 `0`/`-5` 被生成器**静默替换成 `max_rows=1000`**，而 `edits` 还回显「limit 变更：1 → 0」—— 用户读到的编辑结果与执行语义相反 | `IrEditGuard.diff` 对 `after.limit <= 0` 直接 REPLAN（文案说清「0/负数等于不限条数，会被放大到上限」）；`appendLimit` 的兜底保留但 `log.warn` 留痕（兜底不能静默） |
+| **P2-2** | `EQ` 的值改成数组/对象时编辑层不拦，SQL 发到数据源才失败 → 用户看到「数据源拒绝了这条查询」，**把自己的非法编辑误报成数据源故障** | `IrEditGuard` 加标量约束：`Collection`/`Map`/数组一律 REPLAN（文案「值必须是单个标量，当前是数组（2 个元素）」），状态从此分得开（编辑非法=REJECTED，执行故障=FAILED） |
+| P3-1 | TTL 提示按分钟向上取整，配 1 秒 TTL 仍说「1 分钟有效」（夸大有效期） | 新增 `PreviewStore.ttlText()`：≥60 秒说分钟，不足 60 秒说秒；`preview`/过期提示都改用它 |
+| P3-2 | `LinkedHashMap(accessOrder=true)` 淘汰的是**最久未访问**，注释与日志都写「最久未创建」 | 注释与 `log.debug` 改成 LRU，并写明「执行过一次的快照反而更不易被淘汰」这个真实后果 |
+| P3-3 | `RunStatus.FAILED` 的 javadoc 把「IR 无法识别」列为 FAILED，与 `of()` 经 `rejectedBy` 判 REJECTED 相反 | javadoc 改成「不含 IR 无法识别」，并说明它走 `ctx.reject(reason,"identify")` |
+| P3-5 | 结构性拒绝时**同时回显 `edits`**，读起来像「部分应用」 | REPLAN 分支 `setEditAllowed(List.of())`，`setEditAllowed(verdict.allowed())` 挪到判断之后 |
+| P3-6 | 维度可重复（`[channel_name, channel_name]` → `GROUP BY a, a`） | `IrEditGuard.dims()` 去重后比对 + 新增 `dedupeDimensions()` 在 `convert` 前清重；放在服务端做，不指望前端 |
+
+### 披露未改（写进已知边界）
+
+- **P2-3 `previewId` 无归属**：任何持 id 者都能执行，且 execute 会把这一轮写进**快照里那个 sessionId** 的会话。
+  当前无鉴权（Ticket 14 才做），因此「预览凭据 = 写入他人会话的凭据」这一点必须在票面写明。修法留给 Ticket 14：
+  快照存 `owner`，execute 校验（或 key 用 `owner + previewId`）。
+- **P3-4 预览 4 条 gate、执行 5 条**：预览只到闸门④（还没执行，谈不上结果自检）。前端（Ticket 13）
+  按「有几条渲染几条」写，不按下标取。
+- **P3-7 同一 previewId 重复执行各占一轮会话**：TTL 内多次执行是刻意允许的（执行失败后不必重新预览），
+  代价是占会话配额。会话 5 轮上限本来就靠「重问」自然翻篇，不为它加快照级去重。
+
+### 验收
+
+`verify_hitl` **63 → 71 项**（新增 8 条：limit 0/-5 拒绝、limit=10 仍执行、值数组/对象拒绝、
+重复维度去重后 `GROUP BY` 只出现一次、拒绝时 `edits` 为空、过期文案带单位）；
+`IrEditGuardTest` **11 → 14 例**；`mvn -o test` **168/168**；
+`verify_traces` 31/31、`verify_session` 21/21、`verify_explain` 142/142、`e2e_stub` PASS、前端冒烟 26/26 均无回归。
+
+**判据教训**（又一次同源）：写「重复维度被去重」时我先数了 SQL 里 `channel_name` 的总次数，
+结果 WHERE/GROUP BY/ORDER BY/别名都含它，去重成功也判红。**判据只盯那条语义本身**（`GROUP BY` 只有一句、
+且不出现 `GROUP BY a, a`），别数容器里的字面量。

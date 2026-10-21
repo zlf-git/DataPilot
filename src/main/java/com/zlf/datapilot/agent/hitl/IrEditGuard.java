@@ -96,7 +96,12 @@ public final class IrEditGuard {
 
         diffOrderBy(before.getOrderBy(), after.getOrderBy(), structural, allowed);
 
-        if (!Objects.equals(before.getLimit(), after.getLimit())) {
+        // limit 的下界（QA-12 P2-1）：生成器对 limit<=0 是「静默替换成 max_rows」，
+        // 于是「改 0/负数」会变成「放大 1000 倍」，而回显还写着「limit 变更：1 → 0」——
+        // 用户读到的编辑结果与真正执行的语义相反。上界本来就有代价闸门管，下界就该在这里管。
+        if (after.getLimit() != null && after.getLimit() <= 0) {
+            structural.add("limit 必须是正整数（改 0/负数等于「不限条数」，会被静默放大到上限），请回去重新问");
+        } else if (!Objects.equals(before.getLimit(), after.getLimit())) {
             allowed.add("limit 变更：" + before.getLimit() + " → " + after.getLimit());
         }
 
@@ -146,6 +151,14 @@ public final class IrEditGuard {
             }
             if (x.getOp() != y.getOp()) {
                 structural.add(pos + "操作符变更：" + x.getOp() + " → " + y.getOp());
+            }
+            // 值的类型（QA-12 P2-2）：编辑面只该改「值」，不该改「值的形状」。
+            // EQ 配一个数组/对象并不会被编辑层拦，而是把 SQL 发到数据源再失败 ——
+            // 用户看到的「数据源拒绝了这条查询」其实是他自己编辑出来的非法查询，属于把自己的错报成故障。
+            if (isNonScalar(y.getValue())) {
+                structural.add(pos + "的值必须是单个标量，当前是 " + shapeOf(y.getValue())
+                        + "（多个值请重新提问，让 LLM 生成带 IN 的 IR）");
+                continue;
             }
             if (!sameValue(x.getValue(), y.getValue())) {
                 allowed.add(pos + "值变更：" + shortValue(x.getValue()) + " → " + shortValue(y.getValue()));
@@ -214,6 +227,7 @@ public final class IrEditGuard {
                 .toList();
     }
 
+    /** 维度序列（去重，QA-12 P3-6）：重复维度会生成 GROUP BY a, a —— 执行得通但没意义 */
     private static List<String> dims(QueryIr ir) {
         if (ir.getDimensions() == null) {
             return List.of();
@@ -221,7 +235,39 @@ public final class IrEditGuard {
         return ir.getDimensions().stream()
                 .filter(Objects::nonNull)
                 .map(DimensionRef::getField)
+                .distinct()
                 .toList();
+    }
+
+    private static boolean isNonScalar(Object v) {
+        return v instanceof java.util.Collection<?> || v instanceof java.util.Map<?, ?> || (v != null && v.getClass().isArray());
+    }
+
+    private static String shapeOf(Object v) {
+        if (v instanceof java.util.Collection<?> c) {
+            return "数组（" + c.size() + " 个元素）";
+        }
+        if (v instanceof java.util.Map<?, ?>) {
+            return "对象";
+        }
+        return "数组";
+    }
+
+    /**
+     * 把维度的重复项去掉（QA-12 P3-6）。在 {@code convert} 之前调用即可，
+     * 但要留在服务端做 —— 让前端去重等于把「什么算合法 IR」交给客户端。
+     */
+    public static void dedupeDimensions(QueryIr ir) {
+        if (ir == null || ir.getDimensions() == null || ir.getDimensions().size() < 2) {
+            return;
+        }
+        java.util.LinkedHashMap<String, DimensionRef> unique = new java.util.LinkedHashMap<>();
+        for (DimensionRef d : ir.getDimensions()) {
+            if (d != null && d.getField() != null) {
+                unique.putIfAbsent(d.getField(), d);
+            }
+        }
+        ir.setDimensions(new java.util.ArrayList<>(unique.values()));
     }
 
     private static boolean ratioEquals(QueryIr a, QueryIr b) {

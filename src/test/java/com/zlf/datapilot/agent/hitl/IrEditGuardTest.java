@@ -203,4 +203,62 @@ class IrEditGuardTest {
         assertThat(v.replan()).isTrue();
         assertThat(v.reason()).contains("预览快照缺少 IR");
     }
+
+    // ---------------- QA-12 补的三条守卫 ----------------
+
+    @Test
+    @DisplayName("limit 改 0 / 负数：REPLAN（生成器会静默放大到 max_rows，回显却说「改成 0」）")
+    void nonPositiveLimitRequiresReplan() {
+        QueryIr zero = base();
+        zero.setLimit(0);
+        IrEditGuard.Verdict v0 = IrEditGuard.diff(base(), zero);
+        assertThat(v0.replan()).isTrue();
+        assertThat(v0.reason()).contains("limit 必须是正整数");
+
+        QueryIr negative = base();
+        negative.setLimit(-5);
+        assertThat(IrEditGuard.diff(base(), negative).replan()).isTrue();
+
+        // 合法正数仍然是「允许的编辑」，没有被这条守卫误伤
+        QueryIr ok = base();
+        ok.setLimit(5);
+        IrEditGuard.Verdict v5 = IrEditGuard.diff(base(), ok);
+        assertThat(v5.replan()).isFalse();
+        assertThat(v5.allowed()).anyMatch(a -> a.contains("limit 变更"));
+    }
+
+    @Test
+    @DisplayName("过滤值改成数组/对象：REPLAN（这是「改了值的形状」，不是「改值」）")
+    void nonScalarFilterValueRequiresReplan() {
+        QueryIr arr = base();
+        arr.getFilters().get(0).setValue(java.util.List.of("小程序", "APP"));
+        IrEditGuard.Verdict va = IrEditGuard.diff(base(), arr);
+        assertThat(va.replan()).isTrue();
+        assertThat(va.reason()).contains("必须是单个标量").contains("数组");
+
+        QueryIr obj = base();
+        obj.getFilters().get(0).setValue(java.util.Map.of("a", 1));
+        assertThat(IrEditGuard.diff(base(), obj).reason()).contains("对象");
+
+        // 标量改成另一个标量仍是允许的
+        QueryIr scalar = base();
+        scalar.getFilters().get(0).setValue("APP");
+        assertThat(IrEditGuard.diff(base(), scalar).replan()).isFalse();
+    }
+
+    @Test
+    @DisplayName("维度重复：diff 视为没变（去重后比较），dedupeDimensions 只留一份")
+    void duplicateDimensionsAreDeduped() {
+        QueryIr dup = base();
+        dup.getDimensions().add(new com.zlf.datapilot.ir.DimensionRef());
+        dup.getDimensions().get(dup.getDimensions().size() - 1)
+                .setField(dup.getDimensions().get(0).getField());
+
+        IrEditGuard.Verdict v = IrEditGuard.diff(base(), dup);
+        assertThat(v.replan()).isFalse();
+        assertThat(v.allowed()).noneMatch(a -> a.contains("维度变更"));
+
+        IrEditGuard.dedupeDimensions(dup);
+        assertThat(dup.getDimensions()).hasSize(1);
+    }
 }

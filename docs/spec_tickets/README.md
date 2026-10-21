@@ -65,6 +65,15 @@
 
 ## 修订记录
 
+### v2.21（QA-12 收口：3 条 P2 全修 + 5 条 P3）
+
+- **P2-1 `limit` 下界**：改 `0`/负数原本被生成器静默放大到 `max_rows=1000`，而回显还写「limit 变更：1 → 0」。现在编辑层直接 REPLAN，生成器兜底改 `log.warn` 留痕
+- **P2-2 值的形状**：`EQ` 的值改成数组/对象时编辑层不拦，SQL 发到数据源才失败 → 把自己的非法编辑误报成「数据源拒绝」。现在 `Collection`/`Map` 在编辑层 REPLAN（REJECTED vs FAILED 分得开）
+- **P3 修 5 条**：TTL 文案不足 60 秒说秒（不再夸大）、LRU 淘汰注释/日志写对、`RunStatus.FAILED` javadoc 与实现对齐、结构性拒绝不再回显 `edits`（不做部分应用）、维度重复去重（`GROUP BY a, a` → `GROUP BY a`）
+- **P3 披露 2 条**：`previewId` 无归属（任何持 id 者可执行并写进 id 所属会话）→ 留给 Ticket 14 的鉴权；
+  同一 previewId 重复执行各占一轮会话
+- 数据：`verify_hitl` **71/71**（新增 8 项）、`IrEditGuardTest` 14 例、`mvn -o test` **168/168**，其余脚本与前端冒烟零回归
+
 ### v2.20（Ticket 13 前端四页面）
 
 - **四页面落地**：`frontend/`（React18 + Vite5 + AntD5）。问数（链路透明 + HITL 两段）、指标管理、元数据/字段白名单、闸门配置

@@ -11,6 +11,8 @@ import com.zlf.datapilot.ir.TimeRange;
 import com.zlf.datapilot.knowledge.MetadataRepository;
 import com.zlf.datapilot.knowledge.OntologyCache;
 import com.zlf.datapilot.knowledge.model.MetricDef;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -60,6 +62,8 @@ import java.util.stream.Collectors;
  */
 @Component
 public class IrToSqlConverter {
+
+    private static final Logger log = LoggerFactory.getLogger(IrToSqlConverter.class);
 
     /**
      * 字段名/别名合法格式：字母或下划线开头，仅字母数字下划线。含空格/等号/分号/引号的一律过不了这关。
@@ -659,6 +663,9 @@ public class IrToSqlConverter {
                 ? cache.gateThreshold("max_rows", DEFAULT_MAX_ROWS)
                 : ir.getLimit();
         if (limit <= 0) {
+            // QA-12 P2-1：编辑层的下界已经拦掉 limit<=0，这里是「绕过编辑层」时的兜底。
+            // 兜底必须留痕 —— 静默替换会让「改了 limit 却没生效」变成查不出来的问题。
+            log.warn("IR 的 limit={} 非法（<=0），按默认上限 {} 执行；正常路径应在编辑层已被拒绝", limit, DEFAULT_MAX_ROWS);
             limit = DEFAULT_MAX_ROWS;
         }
         sql.append(" LIMIT ").append(limit);

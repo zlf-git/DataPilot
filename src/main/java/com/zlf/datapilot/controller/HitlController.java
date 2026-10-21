@@ -78,7 +78,7 @@ public class HitlController {
         // 没有结果就没有图表：chartType 用 null 表达「没有」，别给一个会渲染出空图的 "table"
         r.setChartType(null);
         r.setReportHtml("");
-        r.setAnswer("预览不存在或已过期（" + previews.ttlMinutes() + " 分钟有效），请重新预览后再执行");
+        r.setAnswer("预览不存在或已过期（" + previews.ttlText() + "有效），请重新预览后再执行");
         return r;
     }
 

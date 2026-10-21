@@ -67,7 +67,11 @@ public class PreviewStore {
     private final int maxPreviews;
     private final long ttlMillis;
 
-    /** accessOrder=true：淘汰时先淘汰最久未创建的 */
+    /**
+     * accessOrder=true：淘汰时先淘汰<b>最久未被访问</b>的（LRU），不是最久未创建的。
+     * 差别是真实的：某个快照被执行过一次（get 刷新访问序）后，它反而更不容易被淘汰 ——
+     * QA-12 P3-2 指出原注释写反了，会让下一个人按错误假设推理。
+     */
     private final Map<String, Preview> previews = new LinkedHashMap<>(16, 0.75f, true);
 
     public PreviewStore(ObjectMapper objectMapper,
@@ -101,7 +105,7 @@ public class PreviewStore {
             if (previews.size() >= maxPreviews) {
                 String eldest = previews.keySet().iterator().next();
                 previews.remove(eldest);
-                log.debug("预览快照达上限 {}，淘汰最久未创建的 {}", maxPreviews, eldest);
+                log.debug("预览快照达上限 {}，淘汰最久未访问的 {}", maxPreviews, eldest);
             }
             previews.put(id, preview);
         }
@@ -156,6 +160,17 @@ public class PreviewStore {
     /** 展示用：不足一分钟按一分钟算（消息里说「0 分钟有效」很怪） */
     public long ttlMinutes() {
         return Math.max(1, (ttlMillis + 59_999L) / 60_000L);
+    }
+
+    /**
+     * 给用户看的有效期文案（QA-12 P3-1）。
+     *
+     * <p>只按分钟向上取整会在自定义短 TTL 时<b>夸大</b>有效期：配 1 秒实际 1 秒后失效，
+     * 提示却说「1 分钟有效」。所以不足 60 秒直接说秒数，别为了句子好看去改事实。
+     */
+    public String ttlText() {
+        long seconds = ttlSeconds();
+        return seconds >= 60 ? ttlMinutes() + " 分钟" : seconds + " 秒";
     }
 
     /** 仅供测试：清空 */

@@ -316,7 +316,7 @@ public class AgentEngine {
                     SpanStatus.PREVIEW);
             ctx.setRunStatus(RunStatus.PREVIEW);
             ctx.setAnswer("已生成 SQL 并通过四道闸门校验，尚未执行；确认后提交 /api/ask/execute（"
-                    + previews.ttlMinutes() + " 分钟内有效）");
+                    + previews.ttlText() + "内有效）");
             return ctx;
         } finally {
             trace.finish(ctx, RunStatus.of(ctx));
@@ -348,9 +348,11 @@ public class AgentEngine {
         try {
             QueryIr stored = previews.parseIr(preview);
             IrEditGuard.Verdict verdict = IrEditGuard.diff(stored, submitted);
-            ctx.setEditAllowed(verdict.allowed());
 
             if (verdict.replan()) {
+                // QA-12 P3-5：拒绝时不能回显 edits —— 「结构性拒绝 + 同时回显已接受的编辑」
+                // 读起来像「部分应用」，而本方法明确不做部分应用（一处都不应用）
+                ctx.setEditAllowed(List.of());
                 ctx.setStructuralChanges(verdict.structural());
                 ctx.setErrorMessage("编辑超出可调范围，请重新问一遍生成新的预览：" + verdict.reason()
                         + "（可调整的只有：过滤条件的值、结果条数、排序方向、维度）");
@@ -361,8 +363,11 @@ public class AgentEngine {
             }
 
             QueryIr target = submitted != null ? submitted : stored;
+            ctx.setEditAllowed(verdict.allowed());
             // anchor / 环比平移是服务端字段：执行前清空，让生成器按此刻的数据重新解析锚点
             IrEditGuard.enforceServerFields(target);
+            // 维度去重（QA-12 P3-6）：重复维度生成 GROUP BY a, a，执行得通但没意义
+            IrEditGuard.dedupeDimensions(target);
             ctx.setIr(target);
 
             trace.mark(TraceSpan.HITL_EXECUTE, "previewId=" + preview.previewId()
