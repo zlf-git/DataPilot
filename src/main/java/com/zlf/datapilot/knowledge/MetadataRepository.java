@@ -8,8 +8,12 @@ import com.zlf.datapilot.knowledge.model.SemanticModel;
 import com.zlf.datapilot.knowledge.model.TermDict;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.util.List;
 
 /**
@@ -121,6 +125,20 @@ public class MetadataRepository {
                 METRIC_MAPPER);
     }
 
+    public MetricDef findByMetricId(String metricId) {
+        List<MetricDef> list = jdbc.query(
+                "SELECT " + METRIC_COLUMNS + " FROM metric_def WHERE metric_id = ?",
+                METRIC_MAPPER, metricId);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    public MetricDef findByMetricName(String metricName) {
+        List<MetricDef> list = jdbc.query(
+                "SELECT " + METRIC_COLUMNS + " FROM metric_def WHERE metric_name = ?",
+                METRIC_MAPPER, metricName);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
     public List<TermDict> listTerms() {
         return jdbc.query("SELECT id, term, field_ref FROM term_dict", TERM_MAPPER);
     }
@@ -140,6 +158,13 @@ public class MetadataRepository {
         return jdbc.query(
                 "SELECT id, gate_name, param_key, param_value, updated_by FROM gate_config",
                 GATE_MAPPER);
+    }
+
+    public GateConfig findGateConfig(String gateName, String paramKey) {
+        List<GateConfig> list = jdbc.query(
+                "SELECT id, gate_name, param_key, param_value, updated_by FROM gate_config WHERE gate_name = ? AND param_key = ?",
+                GATE_MAPPER, gateName, paramKey);
+        return list.isEmpty() ? null : list.get(0);
     }
 
     public int countMetrics() {
@@ -171,21 +196,67 @@ public class MetadataRepository {
     }
 
     public void saveMetric(MetricDef m) {
-        jdbc.update(
-                "INSERT INTO metric_def (metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE metric_name = VALUES(metric_name), metric_alias = VALUES(metric_alias), department = VALUES(department), " +
-                "metric_sql = VALUES(metric_sql), metric_type = VALUES(metric_type), table_name = VALUES(table_name), " +
-                "dimensions = VALUES(dimensions), owner = VALUES(owner), status = VALUES(status)",
-                m.getMetricId(), m.getMetricName(), m.getMetricAlias(), m.getDepartment(), m.getMetricSql(),
-                m.getMetricType(), m.getTableName(), m.getDimensions(), m.getOwner(), m.getStatus());
+        MetricDef existing = findByMetricId(m.getMetricId());
+        if (existing != null) {
+            // 已存在（按 metric_id）→ 只 UPDATE 这一行，绝不用 ON DUPLICATE KEY 兜两个唯一键
+            jdbc.update(
+                    "UPDATE metric_def SET metric_name = ?, metric_alias = ?, department = ?, metric_sql = ?, " +
+                    "metric_type = ?, table_name = ?, dimensions = ?, owner = ?, status = ? WHERE metric_id = ?",
+                    m.getMetricName(), m.getMetricAlias(), m.getDepartment(), m.getMetricSql(),
+                    m.getMetricType(), m.getTableName(), m.getDimensions(), m.getOwner(), m.getStatus(),
+                    m.getMetricId());
+            m.setId(existing.getId());
+        } else {
+            // 新增 → INSERT 并回填自增主键
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbc.update(con -> {
+                PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO metric_def (metric_id, metric_name, metric_alias, department, metric_sql, " +
+                        "metric_type, table_name, dimensions, owner, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        Statement.RETURN_GENERATED_KEYS);
+                ps.setString(1, m.getMetricId());
+                ps.setString(2, m.getMetricName());
+                ps.setString(3, m.getMetricAlias());
+                ps.setString(4, m.getDepartment());
+                ps.setString(5, m.getMetricSql());
+                ps.setString(6, m.getMetricType());
+                ps.setString(7, m.getTableName());
+                ps.setString(8, m.getDimensions());
+                ps.setString(9, m.getOwner());
+                ps.setString(10, m.getStatus());
+                return ps;
+            }, keyHolder);
+            Number key = keyHolder.getKey();
+            if (key != null) {
+                m.setId(key.longValue());
+            }
+        }
     }
 
     public void saveGateConfig(GateConfig g) {
-        jdbc.update(
-                "INSERT INTO gate_config (gate_name, param_key, param_value, updated_by) VALUES (?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE param_value = VALUES(param_value), updated_by = VALUES(updated_by)",
-                g.getGateName(), g.getParamKey(), g.getParamValue(), g.getUpdatedBy());
+        GateConfig existing = findGateConfig(g.getGateName(), g.getParamKey());
+        if (existing != null) {
+            jdbc.update(
+                    "UPDATE gate_config SET param_value = ?, updated_by = ? WHERE gate_name = ? AND param_key = ?",
+                    g.getParamValue(), g.getUpdatedBy(), g.getGateName(), g.getParamKey());
+            g.setId(existing.getId());
+        } else {
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbc.update(con -> {
+                PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO gate_config (gate_name, param_key, param_value, updated_by) VALUES (?, ?, ?, ?)",
+                        Statement.RETURN_GENERATED_KEYS);
+                ps.setString(1, g.getGateName());
+                ps.setString(2, g.getParamKey());
+                ps.setString(3, g.getParamValue());
+                ps.setString(4, g.getUpdatedBy());
+                return ps;
+            }, keyHolder);
+            Number key = keyHolder.getKey();
+            if (key != null) {
+                g.setId(key.longValue());
+            }
+        }
     }
 
     public void saveTerm(TermDict t) {

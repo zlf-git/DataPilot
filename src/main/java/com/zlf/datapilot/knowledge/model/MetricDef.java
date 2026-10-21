@@ -1,5 +1,7 @@
 package com.zlf.datapilot.knowledge.model;
 
+import jakarta.validation.constraints.NotBlank;
+
 /**
  * 指标口径实体：对应 metric_def 表（schema v2）。
  * 每个指标一行，口径只定义一次，业务部门自助维护。
@@ -9,13 +11,24 @@ package com.zlf.datapilot.knowledge.model;
 public class MetricDef {
 
     private Long id;
+
+    @NotBlank(message = "metricId 不能为空")
     private String metricId;
+
+    @NotBlank(message = "metricName 不能为空")
     private String metricName;
+
     private String metricAlias;
     private String department;
+
+    @NotBlank(message = "metricSql 不能为空")
     private String metricSql;
+
     private String metricType;
+
+    @NotBlank(message = "tableName 不能为空")
     private String tableName;
+
     private String dimensions;
     private String owner;
     private String status;

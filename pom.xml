@@ -45,6 +45,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
+        <!-- 参数校验：@Valid/@NotBlank 约束 PUT 入参非空 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
         <!-- MySQL 驱动（StarRocks 兼容 MySQL 协议，也用这个驱动） -->
         <dependency>
             <groupId>com.mysql</groupId>

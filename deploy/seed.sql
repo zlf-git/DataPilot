@@ -64,7 +64,7 @@ INSERT IGNORE INTO metric_def
 ('paid_order_cnt',      '支付订单数',   '已支付订单,成交订单',       '电商部',   'SUM(paid_order_cnt)',        'simple',    'ads_trade_overview_di',    'dt', '数据开发', '启用'),
 ('paid_user_cnt',       '支付用户数',   '付费用户数,成交用户数',     '电商部',   'SUM(paid_user_cnt)',         'uv',        'ads_trade_overview_di',    'dt', '数据开发', '启用'),
 ('pay_rate',            '支付率',       '下单支付率,订单支付率',     '电商部',   'SUM(paid_order_cnt)/SUM(total_order_cnt)', 'composite', 'ads_trade_overview_di', 'dt', '数据开发', '启用'),
-('pay_conversion_rate', '支付转化率',   '下单转支付率,成交转化率',   '渠道运营部','pay_conversion_rate',        'simple',    'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用');
+('pay_conversion_rate', '支付转化率',   '下单转支付率,成交转化率',   '渠道运营部','AVG(pay_conversion_rate)',  'simple',    'ads_channel_conversion_di','dt,channel_name', '数据开发', '启用');
 
 -- 4. 指标-表关联（多表指标在此展开，供存在性闸门查「指标在哪些表可算」）
 INSERT IGNORE INTO metric_table (metric_id, table_name) VALUES

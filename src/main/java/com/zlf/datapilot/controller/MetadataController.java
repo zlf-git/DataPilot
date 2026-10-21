@@ -5,6 +5,7 @@ import com.zlf.datapilot.knowledge.model.FieldMetadata;
 import com.zlf.datapilot.knowledge.model.GateConfig;
 import com.zlf.datapilot.knowledge.model.MetricDef;
 import com.zlf.datapilot.service.MetadataService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 元数据维护接口（Ticket 01b）。
@@ -45,15 +45,11 @@ public class MetadataController {
         return service.listMetrics();
     }
 
-    /** 指标定义写入（写，需 write-enabled；metric_sql 过正则白名单） */
+    /** 指标定义写入（写，需 write-enabled；metric_sql 过正则白名单，入参 @Valid 非空） */
     @PutMapping("/metrics")
-    public ResponseEntity<?> putMetric(@RequestBody MetricDef m) {
+    public ResponseEntity<?> putMetric(@Valid @RequestBody MetricDef m) {
         checkWriteEnabled();
-        try {
-            return ResponseEntity.ok(service.putMetric(m));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        return ResponseEntity.ok(service.putMetric(m));
     }
 
     /** 闸门阈值列表（读） */
@@ -62,9 +58,9 @@ public class MetadataController {
         return service.listGateConfigs();
     }
 
-    /** 闸门阈值写入（写，需 write-enabled） */
+    /** 闸门阈值写入（写，需 write-enabled；paramKey/paramValue 过枚举+类型校验，入参 @Valid 非空） */
     @PutMapping("/gate-config")
-    public ResponseEntity<?> putGateConfig(@RequestBody GateConfig g) {
+    public ResponseEntity<?> putGateConfig(@Valid @RequestBody GateConfig g) {
         checkWriteEnabled();
         return ResponseEntity.ok(service.putGateConfig(g));
     }

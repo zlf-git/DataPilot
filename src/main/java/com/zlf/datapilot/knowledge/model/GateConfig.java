@@ -1,5 +1,7 @@
 package com.zlf.datapilot.knowledge.model;
 
+import jakarta.validation.constraints.NotBlank;
+
 /**
  * 闸门配置实体：对应 gate_config 表。
  * 存代价/结果自检的阈值参数（管理员可调，业务不可见），如 max_join/max_metric/max_limit/max_rows。
@@ -7,9 +9,16 @@ package com.zlf.datapilot.knowledge.model;
 public class GateConfig {
 
     private Long id;
+
+    @NotBlank(message = "gateName 不能为空")
     private String gateName;
+
+    @NotBlank(message = "paramKey 不能为空")
     private String paramKey;
+
+    @NotBlank(message = "paramValue 不能为空")
     private String paramValue;
+
     private String updatedBy;
 
     public Long getId() {
