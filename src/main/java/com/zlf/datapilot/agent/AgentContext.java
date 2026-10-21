@@ -42,6 +42,15 @@ public class AgentContext {
     /** LLM 生成的结构化 IR */
     private QueryIr ir;
 
+    /** LLM 本次生成的输入 token 数（AgentOps 成本统计用） */
+    private int promptTokens;
+
+    /** LLM 本次生成的输出 token 数 */
+    private int completionTokens;
+
+    /** LLM 本次生成的总 token 数 */
+    private int totalTokens;
+
     /** IR 转出的受控 SQL（参数化） */
     private SqlCommand sqlCommand;
 
@@ -136,6 +145,30 @@ public class AgentContext {
 
     public void setIr(QueryIr ir) {
         this.ir = ir;
+    }
+
+    public int getPromptTokens() {
+        return promptTokens;
+    }
+
+    public void setPromptTokens(int promptTokens) {
+        this.promptTokens = promptTokens;
+    }
+
+    public int getCompletionTokens() {
+        return completionTokens;
+    }
+
+    public void setCompletionTokens(int completionTokens) {
+        this.completionTokens = completionTokens;
+    }
+
+    public int getTotalTokens() {
+        return totalTokens;
+    }
+
+    public void setTotalTokens(int totalTokens) {
+        this.totalTokens = totalTokens;
     }
 
     public SqlCommand getSqlCommand() {

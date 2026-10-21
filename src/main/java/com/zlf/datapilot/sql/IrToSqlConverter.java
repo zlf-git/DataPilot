@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * IR → 受控 SQL 转换器。
@@ -20,6 +21,9 @@ import java.util.List;
  */
 @Component
 public class IrToSqlConverter {
+
+    /** 字段名合法格式：字母/下划线开头，仅字母数字下划线。任何含空格/等号/分号/引号的注入串都过不了这关 */
+    private static final Pattern FIELD_NAME = Pattern.compile("^[a-z_][a-z0-9_]*$");
 
     private final MetadataRepository repo;
 
@@ -67,11 +71,16 @@ public class IrToSqlConverter {
     }
 
     private String buildCondition(Filter f, List<Object> params) {
+        String field = f.getField();
+        // 列位注入兜底：field 必须是干净字段名（字母/下划线开头）。即使上游闸门被绕过，这里也拦得住
+        if (field == null || !FIELD_NAME.matcher(field).matches()) {
+            throw new IllegalArgumentException("非法字段名：" + field);
+        }
         FilterOp op = f.getOp() == null ? FilterOp.EQ : f.getOp();
         switch (op) {
             case EQ -> {
                 params.add(f.getValue());
-                return f.getField() + " = ?";
+                return field + " = ?";
             }
             case IN, LIKE, GT, GE, LT, LE ->
                 throw new IllegalArgumentException("Ticket 01 仅支持 EQ 过滤，暂不支持 op=" + op);

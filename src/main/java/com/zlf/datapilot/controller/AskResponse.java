@@ -19,6 +19,9 @@ public class AskResponse {
     private List<String> gates;
     private List<Map<String, Object>> rows;
     private long costMs;
+    private int promptTokens;
+    private int completionTokens;
+    private int totalTokens;
     private String answer;
     private String chartType;
     private String reportHtml;
@@ -85,6 +88,30 @@ public class AskResponse {
 
     public void setCostMs(long costMs) {
         this.costMs = costMs;
+    }
+
+    public int getPromptTokens() {
+        return promptTokens;
+    }
+
+    public void setPromptTokens(int promptTokens) {
+        this.promptTokens = promptTokens;
+    }
+
+    public int getCompletionTokens() {
+        return completionTokens;
+    }
+
+    public void setCompletionTokens(int completionTokens) {
+        this.completionTokens = completionTokens;
+    }
+
+    public int getTotalTokens() {
+        return totalTokens;
+    }
+
+    public void setTotalTokens(int totalTokens) {
+        this.totalTokens = totalTokens;
     }
 
     public String getAnswer() {

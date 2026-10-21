@@ -29,8 +29,21 @@ public class SqlExecuteStep implements AgentStep {
     @Override
     public AgentContext execute(AgentContext ctx) {
         SqlCommand cmd = ctx.getSqlCommand();
-        List<Map<String, Object>> rows = executor.query(cmd);
-        ctx.setQueryResult(rows);
+        try {
+            List<Map<String, Object>> rows = executor.query(cmd);
+            ctx.setQueryResult(rows);
+        } catch (Exception e) {
+            // SQL 执行失败不向上抛 500，放 errorMessage 由 AskController 透出
+            ctx.setErrorMessage("SQL 执行失败：" + brief(e));
+        }
         return ctx;
+    }
+
+    private String brief(Throwable t) {
+        String msg = t.getMessage();
+        if (msg == null) {
+            return t.getClass().getSimpleName();
+        }
+        return t.getClass().getSimpleName() + ": " + (msg.length() > 120 ? msg.substring(0, 120) + "..." : msg);
     }
 }

@@ -42,6 +42,9 @@ public class AskController {
         r.setGates(List.of());
         r.setRows(ctx.getQueryResult());
         r.setCostMs(costMs);
+        r.setPromptTokens(ctx.getPromptTokens());
+        r.setCompletionTokens(ctx.getCompletionTokens());
+        r.setTotalTokens(ctx.getTotalTokens());
         // answer/chartType/reportHtml 占位（Ticket 11 填充）；失败时把原因放进 answer 便于定位
         r.setAnswer(ctx.getErrorMessage() != null ? ctx.getErrorMessage() : "");
         r.setChartType("table");
