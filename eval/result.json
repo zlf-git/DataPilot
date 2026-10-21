@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "ticket": "06b",
-  "generated_at": "2026-10-21T14:06:29+08:00",
-  "host": "http://127.0.0.1:18081",
+  "generated_at": "2026-10-21T14:27:00+08:00",
+  "host": "http://127.0.0.1:18082",
   "golden_set": {
     "path": "eval\\golden_set.json",
     "sha256": "655695b5435b0d837e584437fb22acf33efac5bd840ce2589a8c1cda78bc583e",
@@ -11,7 +11,7 @@
     "tolerance": 0.011
   },
   "code": {
-    "git_head": "862e2e5 Ticket 07：引擎接口化（SqlExecutor 双实现 + 按配置切换 + 白名单钩子 + 修锚点文案漏 DB 原文）",
+    "git_head": "206ea58 Ticket 08：多模型工厂（一行切 provider + 工厂硬拒 stub + /api/health/llm 自检）",
     "dirty_files": 0
   },
   "env": {
@@ -26,7 +26,7 @@
     "accuracy": 1.0,
     "table_hit_rate": 1.0,
     "field_hit_rate": 1.0,
-    "avg_latency_ms": 31.3,
+    "avg_latency_ms": 29.1,
     "syntax_pass_rate": 1.0,
     "gate_block_rate": 0.0,
     "sql_shape_score": 1.0,
@@ -86,8 +86,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 123,
-      "trace_id": "bf95dcef5fe94cec9af6d411f213ce37",
+      "cost_ms": 98,
+      "trace_id": "e1810f56b9404aaaa3891d7b46e10936",
       "answer": "",
       "rows": [
         {
@@ -138,8 +138,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 29,
-      "trace_id": "5b4f2b2101bd4f34b3a3c13f7d671ed8",
+      "cost_ms": 36,
+      "trace_id": "68a6dab1be694a8fb10251c626d9ff32",
       "answer": "",
       "rows": [
         {
@@ -186,8 +186,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 27,
-      "trace_id": "0be1b5f9670e4fcfbb51188e6f20e43e",
+      "cost_ms": 24,
+      "trace_id": "bbc81e0a59e8478abebe1e32166f349d",
       "answer": "",
       "rows": [
         {
@@ -233,8 +233,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 24,
-      "trace_id": "9aeef0d364e0463bbad3a03facd54af7",
+      "cost_ms": 26,
+      "trace_id": "049e666b519e47e89e193087cbd79c37",
       "answer": "",
       "rows": [
         {
@@ -286,8 +286,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 27,
-      "trace_id": "81991fbb29ed42ec899493d0afe00616",
+      "cost_ms": 24,
+      "trace_id": "72d0bcafdfe54342bfcc02d20236e10a",
       "answer": "",
       "rows": [
         {
@@ -337,8 +337,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 26,
-      "trace_id": "409d42a2e8164ad7a137a46db53bb7e2",
+      "cost_ms": 27,
+      "trace_id": "d61218ad597d48229256c1314394990e",
       "answer": "",
       "rows": [
         {
@@ -395,7 +395,7 @@
         "结果自检=PASS"
       ],
       "cost_ms": 20,
-      "trace_id": "db26e277d2944c4aa153e5618233c888",
+      "trace_id": "aac025b2a6424013b68303d4b20344f6",
       "answer": "",
       "rows": [
         {
@@ -444,7 +444,7 @@
         "结果自检=PASS"
       ],
       "cost_ms": 24,
-      "trace_id": "2733672d212145fba12d3deb5f8d9deb",
+      "trace_id": "db620d35cea24e308453c915ca638d3c",
       "answer": "",
       "rows": [
         {
@@ -499,8 +499,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 24,
-      "trace_id": "67370dcb167a4958a4ee893d5dfcd65a",
+      "cost_ms": 18,
+      "trace_id": "11b0722f2cae400b87c2779976a14cb5",
       "answer": "",
       "rows": [
         {
@@ -547,8 +547,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 17,
-      "trace_id": "31be235d17254ac9a4e48b01cc831330",
+      "cost_ms": 18,
+      "trace_id": "429b124c49bb4cfb8b44fc0c509705ab",
       "answer": "",
       "rows": [
         {
@@ -600,8 +600,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 20,
-      "trace_id": "84ee923cb10d45cc90226ecd80473a64",
+      "cost_ms": 17,
+      "trace_id": "89000d8bb2bc43a19dba60da3062cdce",
       "answer": "",
       "rows": [
         {
@@ -654,8 +654,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 28,
-      "trace_id": "20ae95b67af340aca899b75b4a5b7b0d",
+      "cost_ms": 25,
+      "trace_id": "e854cdeb94b74519b492a0a87690d819",
       "answer": "",
       "rows": [
         {
@@ -708,8 +708,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 30,
-      "trace_id": "312b15c30e0c41c78b2a8e0fc7fd4699",
+      "cost_ms": 41,
+      "trace_id": "eba4c7d0404a42548bdff0947aa82315",
       "answer": "",
       "rows": [
         {
@@ -762,8 +762,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 23,
-      "trace_id": "1354ce993fa949d5acf73c1aa3879c7e",
+      "cost_ms": 17,
+      "trace_id": "a55b02885e274aaaa13dd590cd6a12c0",
       "answer": "",
       "rows": [
         {
@@ -814,8 +814,8 @@
         "语法=PASS",
         "结果自检=PASS"
       ],
-      "cost_ms": 28,
-      "trace_id": "6b939cf39b9c40c89f204c8e929abcaf",
+      "cost_ms": 21,
+      "trace_id": "c1967f80f42e4bffb714f239e34624ad",
       "answer": "",
       "rows": [
         {
