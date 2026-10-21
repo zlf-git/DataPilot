@@ -529,9 +529,16 @@ public class IrToSqlConverter {
         // 回填解析结果，便于响应体回显「实际用的窗口」
         tr.setAnchor(anchorStr);
 
-        LocalDate from = anchor.minusDays(days);
+        // 环比窗口平移（Ticket 10）：offset 由服务端填，模型不产出。挪的是上界，
+        // 天数不变 —— 「前 7 天」和「近 7 天」是等长窗口，只有位置不同。
+        int offset = tr.getCompareOffsetDays() == null ? 0 : tr.getCompareOffsetDays();
+        if (offset < 0 || offset > MAX_WINDOW_DAYS) {
+            throw new IllegalArgumentException("环比窗口平移天数非法：" + offset + "（允许 0~" + MAX_WINDOW_DAYS + "）");
+        }
+        LocalDate to = anchor.minusDays(offset);
+        LocalDate from = to.minusDays(days);
         params.add(from.toString());
-        params.add(anchorStr);
+        params.add(to.toString());
         return List.of(DT_FIELD + " > ?", DT_FIELD + " <= ?");
     }
 

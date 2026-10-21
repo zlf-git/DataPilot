@@ -26,6 +26,18 @@ public class AskResponse {
     private String chartType;
     private String reportHtml;
 
+    /**
+     * 改写后的问题（Ticket 10）：多轮追问补全后的样子。
+     * 只在有 sessionId 且发生补全时与 question 不同 —— 前端可以据此显示「理解成了什么」。
+     */
+    private String rewrittenQuestion;
+
+    /** 环比那次查询的 SQL（Ticket 10；无环比时 null） */
+    private String comparisonSql;
+
+    /** 环比结论：前 N 天无数据 / 前 N 天的值（Ticket 10；无环比时 null） */
+    private String comparisonNote;
+
     public String getTraceId() {
         return traceId;
     }
@@ -136,5 +148,29 @@ public class AskResponse {
 
     public void setReportHtml(String reportHtml) {
         this.reportHtml = reportHtml;
+    }
+
+    public String getRewrittenQuestion() {
+        return rewrittenQuestion;
+    }
+
+    public void setRewrittenQuestion(String rewrittenQuestion) {
+        this.rewrittenQuestion = rewrittenQuestion;
+    }
+
+    public String getComparisonSql() {
+        return comparisonSql;
+    }
+
+    public void setComparisonSql(String comparisonSql) {
+        this.comparisonSql = comparisonSql;
+    }
+
+    public String getComparisonNote() {
+        return comparisonNote;
+    }
+
+    public void setComparisonNote(String comparisonNote) {
+        this.comparisonNote = comparisonNote;
     }
 }

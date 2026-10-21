@@ -161,6 +161,35 @@ class IrToSqlConverterTest {
     }
 
     @Test
+    @DisplayName("环比窗口平移：offset=7 → 参数整体前移 7 天，SQL 形状与本期完全一致（Ticket 10）")
+    void comparisonOffsetShiftsWindowKeepingShape() {
+        QueryIr ir = agg("gmv_total", null);
+        var w = window(7);
+        w.setCompareOffsetDays(7);
+        ir.setTimeRange(w);
+
+        SqlCommand cmd = converter.convert(ir);
+
+        // 仍是半开区间，形状不变：只是 (anchor-7, anchor] 变成 (anchor-14, anchor-7]
+        assertThat(cmd.sql()).contains("WHERE dt > ? AND dt <= ?");
+        assertThat(cmd.sql().toUpperCase()).doesNotContain("BETWEEN");
+        assertThat(cmd.params()).containsExactly("2026-10-05", "2026-10-12");
+    }
+
+    @Test
+    @DisplayName("环比平移天数非法（负数/超上限）：显式拒绝，不静默跑一个空窗口")
+    void comparisonOffsetOutOfRangeRejected() {
+        QueryIr ir = agg("gmv_total", null);
+        var w = window(7);
+        w.setCompareOffsetDays(-1);
+        ir.setTimeRange(w);
+
+        assertThatThrownBy(() -> converter.convert(ir))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("环比窗口平移天数非法");
+    }
+
+    @Test
     @DisplayName("跨表维度：显式拒绝，不放到 SQL 层才炸")
     void crossTableDimensionRejected() {
         QueryIr ir = agg("gmv_total", filter("dt", FilterOp.EQ, "2026-10-19"));

@@ -1,5 +1,6 @@
 package com.zlf.datapilot.controller;
 
+import com.zlf.datapilot.agent.session.SessionStore;
 import com.zlf.datapilot.agent.trace.SpanType;
 import com.zlf.datapilot.agent.trace.TraceSpan;
 import com.zlf.datapilot.knowledge.EngineWhitelist;
@@ -35,12 +36,14 @@ public class HealthController {
     private final MetadataService service;
     private final EngineWhitelist engineWhitelist;
     private final LlmClient llmClient;
+    private final SessionStore sessions;
 
     public HealthController(MetadataService service, EngineWhitelist engineWhitelist,
-                            LlmClient llmClient) {
+                            LlmClient llmClient, SessionStore sessions) {
         this.service = service;
         this.engineWhitelist = engineWhitelist;
         this.llmClient = llmClient;
+        this.sessions = sessions;
     }
 
     @GetMapping("/metadata")
@@ -86,6 +89,24 @@ public class HealthController {
         out.put("expectedSpansPerSuccess", TraceSpan.expectedPerSuccess());
         out.put("spanCatalog", catalog);
         out.put("spanTypes", Arrays.stream(SpanType.values()).map(SpanType::code).toList());
+        return out;
+    }
+
+    /**
+     * 会话存储自检（Ticket 10）：当前存活会话数与三条上限。
+     *
+     * <p>会话在进程内存里（单机单用户作品），重启即清空是<b>有意的降级</b>：
+     * 每轮写一次元数据库会给主链路加一次 fsync（Ticket 09 为此把延迟从 231ms 拉回 56ms）。
+     * 这里暴露上限，是为了让「会话泄漏」这类问题一眼可见，而不是靠猜。
+     */
+    @GetMapping("/session")
+    public Map<String, Object> sessionHealth() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("sessions", sessions.sessionCount());
+        out.put("maxSessions", sessions.maxSessions());
+        out.put("maxRounds", sessions.maxRounds());
+        out.put("ttlMinutes", sessions.ttlMinutes());
+        out.put("storage", "memory");
         return out;
     }
 }

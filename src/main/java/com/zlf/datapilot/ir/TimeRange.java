@@ -22,6 +22,15 @@ public class TimeRange {
     /** 时间锚点 yyyy-MM-dd，由数据 MAX(dt) 解析后回填 */
     private String anchor;
 
+    /**
+     * 窗口平移天数（Ticket 10 环比用）：0/空 = 本期；N = 「前 N 天」那个窗口。
+     *
+     * <p>只由服务端构造（复制 IR 时填），模型不产出这个字段 —— 它是「同一份查询往前挪一个窗口」，
+     * 不是用户可表达的时间语义，让 LLM 填等于给它一个能算错的口子。
+     * 平移后区间仍是半开：{@code (anchor - offset - days, anchor - offset]}。
+     */
+    private Integer compareOffsetDays;
+
     public String getRelativeWindow() {
         return relativeWindow;
     }
@@ -46,8 +55,17 @@ public class TimeRange {
         this.anchor = anchor;
     }
 
+    public Integer getCompareOffsetDays() {
+        return compareOffsetDays;
+    }
+
+    public void setCompareOffsetDays(Integer compareOffsetDays) {
+        this.compareOffsetDays = compareOffsetDays;
+    }
+
     @Override
     public String toString() {
-        return "TimeRange{relativeWindow=" + relativeWindow + ", days=" + days + ", anchor=" + anchor + "}";
+        return "TimeRange{relativeWindow=" + relativeWindow + ", days=" + days + ", anchor=" + anchor
+                + (compareOffsetDays == null ? "" : ", offset=" + compareOffsetDays) + "}";
     }
 }

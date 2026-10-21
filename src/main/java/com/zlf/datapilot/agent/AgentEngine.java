@@ -3,6 +3,7 @@ package com.zlf.datapilot.agent;
 import com.zlf.datapilot.agent.gate.Gate;
 import com.zlf.datapilot.agent.gate.GateChain;
 import com.zlf.datapilot.agent.gate.GateResult;
+import com.zlf.datapilot.agent.session.SessionStore;
 import com.zlf.datapilot.agent.step.PromptBuildStep;
 import com.zlf.datapilot.agent.step.RecallStep;
 import com.zlf.datapilot.agent.step.RewriteStep;
@@ -12,6 +13,7 @@ import com.zlf.datapilot.agent.trace.TraceRecorder;
 import com.zlf.datapilot.agent.trace.TraceSpan;
 import com.zlf.datapilot.agent.trace.TraceStep;
 import com.zlf.datapilot.ir.QueryIr;
+import com.zlf.datapilot.ir.TimeRange;
 import com.zlf.datapilot.llm.LlmClient;
 import com.zlf.datapilot.llm.LlmGeneration;
 import com.zlf.datapilot.sql.IrToSqlConverter;
@@ -21,6 +23,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.net.SocketTimeoutException;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -44,6 +49,7 @@ public class AgentEngine {
     private final IrToSqlConverter irToSqlConverter;
     private final SqlExecuteStep sqlExecuteStep;
     private final TraceRecorder traceRecorder;
+    private final SessionStore sessions;
 
     public AgentEngine(RewriteStep rewriteStep,
                        RecallStep recallStep,
@@ -52,7 +58,8 @@ public class AgentEngine {
                        GateChain gateChain,
                        IrToSqlConverter irToSqlConverter,
                        SqlExecuteStep sqlExecuteStep,
-                       TraceRecorder traceRecorder) {
+                       TraceRecorder traceRecorder,
+                       SessionStore sessions) {
         this.rewriteStep = rewriteStep;
         this.recallStep = recallStep;
         this.promptBuildStep = promptBuildStep;
@@ -61,6 +68,7 @@ public class AgentEngine {
         this.irToSqlConverter = irToSqlConverter;
         this.sqlExecuteStep = sqlExecuteStep;
         this.traceRecorder = traceRecorder;
+        this.sessions = sessions;
     }
 
     /** LLM span 的输出摘要：IR 形状比 IR 全文有用（全文进 input/output 会把 TEXT 列灌满） */
@@ -120,9 +128,14 @@ public class AgentEngine {
             return ctx;
         }
 
-        // ① 改写（Ticket 01 透传）
+        // ① 改写（Ticket 10：多轮补全指代/环比）
         trace.span(TraceSpan.REWRITE, question,
                 () -> rewriteStep.execute(ctx), c -> "rewritten=" + c.getRewrittenQuestion());
+        // 改写阶段可以就地拒绝（同比无数据、换了维度/时间的追问补不出来）—— 这是「明确拒绝」，
+        // 不是失败，但继续往下走会让 LLM 拿一个残缺问题自由发挥，所以在这里就停
+        if (ctx.getErrorMessage() != null) {
+            return ctx;
+        }
         // ② 召回
         trace.span(TraceSpan.RECALL, null,
                 () -> recallStep.execute(ctx), c -> "tables=" + c.getRelatedTables());
@@ -188,7 +201,123 @@ public class AgentEngine {
             ctx.setAnswer(resultGate.getWarning());
         }
 
+        // ⑩ 环比（Ticket 10）：本期结果已经出来，再跑「前 N 天」那个等长窗口。
+        // 放在结果自检之后：本期为空/超长截断都已有结论，环比只是补一段对比文字，
+        // 不能影响本期结果本身的判定。
+        if (ctx.getComparisonDays() != null) {
+            runComparison(ctx, ir, ctx.getComparisonDays());
+            // 环比结论并进 answer：本期结论（可能来自结果自检的「无数据」包装）在前，
+            // 前 N 天在后 —— 用户问「那环比呢」，要的是「本期 X；上期 Y/无数据」这一句
+            String base = ctx.getAnswer() != null && !ctx.getAnswer().isBlank()
+                    ? ctx.getAnswer() : "本期：" + summarizeRows(ctx.getQueryResult());
+            if (ctx.getComparisonNote() != null) {
+                ctx.setAnswer(base + "；环比：" + ctx.getComparisonNote());
+            }
+        }
+
+        // ⑪ 记一轮会话：只记「真的生成了 SQL 并跑通」的轮次，
+        // 失败/拒绝的轮次不进上下文 —— 否则下一轮「那环比呢」会补全到一个根本没答出来的问题上
+        rememberRound(ctx);
         return ctx;
+    }
+
+    /**
+     * 环比：把同一份 IR 的时间窗口往前挪 N 天，再走一遍「转换 → 执行」。
+     *
+     * <p>注意<b>只换了窗口</b>：指标/维度/过滤原样复用，所以不存在「绕过白名单」——
+     * 表与字段仍是同一批、已经被本轮的闸门校验过；参数化绑定也仍在（两个日期仍是 {@code ?}）。
+     * 代价是环比那次执行不再单独过语法闸门（SQL 文本只差值不同），这一点写进票面「已知边界」。
+     */
+    private void runComparison(AgentContext ctx, QueryIr ir, int days) {
+        QueryIr prev = copyWithOffset(ir, days);
+        try {
+            SqlCommand cmd = irToSqlConverter.convert(prev);
+            ctx.setComparisonSql(cmd.sql());
+            AgentContext probe = new AgentContext();
+            probe.setTraceId(ctx.getTraceId());
+            probe.setSqlCommand(cmd);
+            sqlExecuteStep.execute(probe);
+            if (probe.getErrorMessage() != null) {
+                ctx.setComparisonNote("前 " + days + " 天查询失败，无法计算环比");
+                return;
+            }
+            List<Map<String, Object>> rows = probe.getQueryResult();
+            boolean empty = rows == null || rows.isEmpty()
+                    || rows.stream().allMatch(row -> row == null || row.values().stream().allMatch(Objects::isNull));
+            if (empty) {
+                ctx.setComparisonNote("前 " + days + " 天无数据，无法计算环比");
+                return;
+            }
+            ctx.setComparisonRows(rows);
+            ctx.setComparisonNote("前 " + days + " 天：" + summarizeRows(rows));
+        } catch (IllegalArgumentException e) {
+            // 窗口平移本身不合法（天数越界/anchor 缺失）：如实说，不猜一个环比数出来
+            ctx.setComparisonNote("环比不可用：" + e.getMessage());
+        }
+    }
+
+    /** 深拷贝一份只改窗口偏移的 IR（列表共享，因为本轮后续不再写它们） */
+    private QueryIr copyWithOffset(QueryIr ir, int offsetDays) {
+        QueryIr copy = new QueryIr();
+        copy.setQuestion(ir.getQuestion());
+        copy.setSelectMode(ir.getSelectMode());
+        copy.setMetrics(ir.getMetrics());
+        copy.setDimensions(ir.getDimensions());
+        copy.setFilters(ir.getFilters());
+        copy.setOrderBy(ir.getOrderBy());
+        copy.setLimit(ir.getLimit());
+        copy.setRatio(ir.getRatio());
+        if (ir.getTimeRange() != null) {
+            TimeRange shifted = new TimeRange();
+            shifted.setRelativeWindow(ir.getTimeRange().getRelativeWindow());
+            shifted.setDays(ir.getTimeRange().getDays());
+            shifted.setAnchor(ir.getTimeRange().getAnchor());
+            shifted.setCompareOffsetDays(offsetDays);
+            copy.setTimeRange(shifted);
+        }
+        return copy;
+    }
+
+    /** 一行摘要：1×1 直接给出值，多行给行数（环比结论里塞整表没有意义） */
+    private String summarizeRows(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return "无数据";
+        }
+        if (rows.size() == 1) {
+            Map<String, Object> only = rows.get(0);
+            if (only != null && only.size() == 1) {
+                return String.valueOf(only.values().iterator().next());
+            }
+            return only == null ? "null" : only.toString();
+        }
+        return rows.size() + " 行";
+    }
+
+    /** 把本轮摘要写进会话存储（供下一轮补全指代/环比） */
+    private void rememberRound(AgentContext ctx) {
+        if (ctx.getSessionId() == null || ctx.getSessionId().isBlank() || ctx.getSqlCommand() == null) {
+            return;
+        }
+        QueryIr ir = ctx.getIr();
+        List<String> metricIds = ir == null || ir.getMetrics() == null ? List.of()
+                : ir.getMetrics().stream()
+                .map(com.zlf.datapilot.ir.MetricRef::getMetricId)
+                .filter(Objects::nonNull)
+                .toList();
+        List<String> dims = ir == null || ir.getDimensions() == null ? List.of()
+                : ir.getDimensions().stream()
+                .map(com.zlf.datapilot.ir.DimensionRef::getField)
+                .filter(Objects::nonNull)
+                .toList();
+        Integer days = ir == null || ir.getTimeRange() == null ? null : ir.getTimeRange().getDays();
+        sessions.append(ctx.getSessionId(), new SessionStore.Round(
+                ctx.getUserQuestion(),
+                ctx.getRewrittenQuestion(),
+                metricIds,
+                dims,
+                days,
+                ctx.getGeneratedSql(),
+                System.currentTimeMillis()));
     }
 
     private QueryIr generateIr(AgentContext ctx) {

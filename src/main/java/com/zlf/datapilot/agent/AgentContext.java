@@ -78,6 +78,21 @@ public class AgentContext {
     /** 闸门执行结果（链路透明回显，GateChain 按序追加） */
     private List<String> gateResults = new ArrayList<>();
 
+    /**
+     * 环比天数（Ticket 10）：非 null 表示本轮是多轮里的「那环比呢」，
+     * 引擎会在本期结果之外，把同一份 IR 的窗口往前挪 N 天再跑一次。
+     */
+    private Integer comparisonDays;
+
+    /** 环比那次查询的 SQL（回显用；不含本期 SQL） */
+    private String comparisonSql;
+
+    /** 环比那次查询的结果（为空表示前 N 天无数据） */
+    private List<Map<String, Object>> comparisonRows = new ArrayList<>();
+
+    /** 环比的文字结论：前 N 天无数据 / 前 N 天的值 */
+    private String comparisonNote;
+
     public List<String> getGateResults() {
         return gateResults;
     }
@@ -244,5 +259,37 @@ public class AgentContext {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
+    }
+
+    public Integer getComparisonDays() {
+        return comparisonDays;
+    }
+
+    public void setComparisonDays(Integer comparisonDays) {
+        this.comparisonDays = comparisonDays;
+    }
+
+    public String getComparisonSql() {
+        return comparisonSql;
+    }
+
+    public void setComparisonSql(String comparisonSql) {
+        this.comparisonSql = comparisonSql;
+    }
+
+    public List<Map<String, Object>> getComparisonRows() {
+        return comparisonRows;
+    }
+
+    public void setComparisonRows(List<Map<String, Object>> comparisonRows) {
+        this.comparisonRows = comparisonRows;
+    }
+
+    public String getComparisonNote() {
+        return comparisonNote;
+    }
+
+    public void setComparisonNote(String comparisonNote) {
+        this.comparisonNote = comparisonNote;
     }
 }

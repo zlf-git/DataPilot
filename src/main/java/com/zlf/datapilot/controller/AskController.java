@@ -53,6 +53,11 @@ public class AskController {
         r.setAnswer(answer);
         r.setChartType("table");
         r.setReportHtml("");
+        // 多轮（Ticket 10）：补全后的问题与环比结论一起回显，
+        // 否则「那环比呢」这类追问在响应体里看不出系统理解成了什么
+        r.setRewrittenQuestion(ctx.getRewrittenQuestion());
+        r.setComparisonSql(ctx.getComparisonSql());
+        r.setComparisonNote(ctx.getComparisonNote());
         return r;
     }
 
