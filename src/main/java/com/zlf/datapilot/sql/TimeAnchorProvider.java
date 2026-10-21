@@ -97,8 +97,13 @@ public class TimeAnchorProvider {
         try {
             rows = jdbc.queryForList("SELECT MAX(" + ANCHOR_FIELD + ") AS m FROM " + table);
         } catch (RuntimeException e) {
-            throw new IllegalArgumentException(
-                    "无法从表 " + table + " 读取 MAX(dt)（列不存在或引擎不可用）：" + e.getMessage());
+            // DB 原文（BadSqlGrammarException + SQL 片段 + 表名）只进日志，不进用户文案：
+            // 口径同 QA-03 P1-2。这条在 Ticket 07 切 MySQL 引擎时必然踩到——
+            // MySQL 演示库的 orders 没有 dt 字段，原文会把「SELECT MAX(dt) AS m FROM orders」直接怼给用户。
+            log.warn("读取时间锚点失败 table={} err={}", table, brief(e));
+            throw new IllegalArgumentException("表 " + table + " 读不到时间字段 " + ANCHOR_FIELD
+                    + "（列不存在或引擎不可用），无法确定「近 N 天」窗口的结束日；"
+                    + "请确认目标表带 " + ANCHOR_FIELD + " 字段且引擎可连");
         }
         Object v = rows.isEmpty() ? null : rows.get(0).get("m");
         LocalDate anchor = toLocalDate(v);
@@ -106,6 +111,15 @@ public class TimeAnchorProvider {
             throw new IllegalArgumentException("表 " + table + " 的 dt 无数据，无法确定时间锚点（Ticket 04）");
         }
         return anchor.toString();
+    }
+
+    /** 异常摘要（不含堆栈）：类名 + 截断到 160 字的 message，只用于日志。 */
+    private static String brief(Throwable t) {
+        String msg = t.getMessage();
+        if (msg == null) {
+            return t.getClass().getSimpleName();
+        }
+        return t.getClass().getSimpleName() + ": " + (msg.length() > 160 ? msg.substring(0, 160) + "..." : msg);
     }
 
     private LocalDate toLocalDate(Object v) {

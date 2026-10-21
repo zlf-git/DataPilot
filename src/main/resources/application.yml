@@ -19,9 +19,16 @@ spring:
           temperature: 0.0
 
 datapilot:
-  # 可插拔的业务数据执行引擎（数据源轴）
+  # 可插拔的业务数据执行引擎（数据源轴，Ticket 07 接口化）
   engine:
-    # 业务数据引擎：starrocks（业务数据在 mall_dw，只读账号 agent_ro）
+    # 引擎类型：starrocks（默认，业务数据在 mall_dw，只读账号 agent_ro）
+    #           mysql（本地演示，订单表 orders 就在元数据库 data_agent，root/root123 读写账号）
+    # 切引擎只改这三行，不改代码、不改五道闸门：
+    #   type: mysql
+    #   url: jdbc:mysql://localhost:3307/data_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    #   username: root / password: ${MYSQL_META_PASSWORD:root123}
+    # 只读口径：StarRocks 侧 agent_ro 只授 SELECT（生产承诺）；MySQL 侧是演示账号，不承诺只读。
+    # 切完看 GET /api/health/engine 确认真的换过来了（Ticket 07 白名单钩子自检）。
     type: starrocks
     url: jdbc:mysql://localhost:9030/mall_dw?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
     username: agent_ro

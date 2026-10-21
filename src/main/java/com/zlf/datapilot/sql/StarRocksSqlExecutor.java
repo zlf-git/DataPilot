@@ -1,45 +1,36 @@
 package com.zlf.datapilot.sql;
 
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Map;
 
 /**
- * StarRocks 执行器：用 JdbcTemplate 连业务库（datapilot.engine，agent_ro 只读账号 @9030）。
- * 主链路走 {@link #query(SqlCommand)} 参数化执行；{@link #query(String)} 仅接口兼容。
+ * StarRocks 执行器：连接 {@code datapilot.engine.url}（mall_dw @9030），生产用只读账号 {@code agent_ro}。
+ *
+ * <p>装配条件：{@code datapilot.engine.type=starrocks}（缺省即 starrocks，见 application.yml）。
+ * 与 {@link MysqlSqlExecutor} 互斥，容器里任何时候只有一个 {@link SqlExecutor}。
  *
  * <p>连接由 {@link EngineJdbc} 统一持有（与时间锚点查询共用同一个池），
  * 不再每次查询新建 TCP 连接（QA-04 P2-2）。
  */
 @Component
-public class StarRocksSqlExecutor implements SqlExecutor {
+@ConditionalOnProperty(prefix = "datapilot.engine", name = "type", havingValue = "starrocks", matchIfMissing = true)
+public class StarRocksSqlExecutor extends JdbcSqlExecutor {
 
-    private final JdbcTemplate jdbc;
+    /** 声明给 Agent 读的 ADS 表（Ticket 07 钩子）。与 semantic_model 取交集后才生效，见 EngineWhitelist。 */
+    private static final List<String> DECLARED = List.of(
+            "ads_trade_overview_di",
+            "ads_channel_conversion_di",
+            "ads_region_gmv_di",
+            "ads_product_sales_rank_di");
 
     public StarRocksSqlExecutor(EngineJdbc engineJdbc) {
-        this.jdbc = engineJdbc.template();
+        super(engineJdbc, DECLARED);
     }
 
     @Override
     public String engineName() {
         return "starrocks";
-    }
-
-    @Override
-    public List<TableMeta> listTables() {
-        // Ticket 01 不实现（元数据召回走 MetadataRepository，不走这里）
-        return List.of();
-    }
-
-    @Override
-    public List<Map<String, Object>> query(String sql) {
-        return jdbc.queryForList(sql);
-    }
-
-    /** 参数化执行（IR 转出的 SqlCommand 走这里，value 用 ? 占位符防注入） */
-    public List<Map<String, Object>> query(SqlCommand cmd) {
-        return jdbc.queryForList(cmd.sql(), cmd.params().toArray());
     }
 }

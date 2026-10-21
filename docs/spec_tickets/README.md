@@ -65,6 +65,15 @@
 
 ## 修订记录
 
+### v2.10（Ticket 07 引擎接口化）
+
+- **执行器接口化**：`SqlExecutor` 补 `query(SqlCommand)`（主链路唯一入口）与 `readableTables()`（白名单钩子），新增抽象基类 `JdbcSqlExecutor` 承载共用执行逻辑，`StarRocksSqlExecutor` / `MysqlSqlExecutor` 仅差 `@ConditionalOnProperty` + 声明表；`SqlExecuteStep` 改为依赖接口，主链路与五道闸门零改动
+- **切引擎只改三行配置**：`datapilot.engine.type` = `starrocks`（默认）/ `mysql`；`type` 写错或 `url` 为空**启动即失败**，不留「两个执行器都没装配」的隐式坑
+- **白名单钩子有真实消费方**：`EngineWhitelist` 计算「引擎声明 ∩ 元数据白名单」并在启动自检 + `GET /api/health/engine` 暴露双向失配；**只自检不拦截**，拒绝判定仍归 Ticket 02
+- **修复 P1（Ticket 04 遗留）**：切 MySQL 后问「近 N 天」会把 `BadSqlGrammarException` 原文（含 `SELECT MAX(dt) AS m FROM orders`）漏给用户；改为干净文案 + 原文进日志，`TimeAnchorProviderTest` 钉死
+- 测试 51/51（新增 EngineSwitch 8 / EngineWhitelist 4 / TimeAnchorProvider 8）；StarRocks 侧 `run_eval` PASS、`verify_stub_ir` 15/15、`e2e_stub` PASS 零回归
+- MySQL 侧端到端：`SELECT COUNT(*) AS zz_orders_cnt FROM orders LIMIT 1000` → 5 行，五闸门全 PASS；临时元数据与演示数据测完清零，基线不变
+
 ### v2.9（QA-06a 报告 P2 收口，06a-d 补丁）
 
 - **校验器不再「自证清白」**：`check_golden_set.py` 重算 `sources` 里两份来源的 sha256 并与记录比对（不一致 exit=1，`--allow-stale` 降级），修掉「文档改了、真源没重生成」的静默漂移；`sources` 由 12 位前缀改存全量
