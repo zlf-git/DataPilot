@@ -62,9 +62,10 @@ for _n in range(11, 16):
 Q_BLOCK = re.compile(r'\*\*Q(\d+)\*\*[ \t]*(.+?)[ \t]*\n+```sql\n(.*?)```', re.S)
 
 
-def sha12(path):
+def sha256_full(path):
+    """存全量指纹：只存 12 位前缀时校验器无法排除碰撞，且与 result.json 的 sha 对不上。"""
     with open(path, 'rb') as fp:
-        return hashlib.sha256(fp.read()).hexdigest()[:12]
+        return hashlib.sha256(fp.read()).hexdigest()
 
 
 def strip_sql_comments(sql):
@@ -303,7 +304,6 @@ def main():
             'expect_cols': results[no]['cols'],
             'expect_rows': results[no]['rows'],
             'expect_value': build_value(et, results[no]),
-            'row_order_stable': stable[no],
         }
         if e.get('sqlMust'):
             rec['sql_must'] = e['sqlMust']
@@ -317,14 +317,23 @@ def main():
         'generated_at': datetime.now().astimezone().isoformat(timespec='seconds'),
         'generator': 'eval/gen_golden_set.py',
         'sources': {
-            'questions_and_expect_sql': 'docs/评测集.md (sha256:%s)' % sha12(DOC),
-            'sql_must_and_window': 'qa/eval_expectations.json (sha256:%s)' % sha12(EXPECT),
+            'questions_and_expect_sql': {'path': 'docs/评测集.md', 'sha256': sha256_full(DOC)},
+            'sql_must_and_window': {'path': 'qa/eval_expectations.json', 'sha256': sha256_full(EXPECT)},
         },
         'target': {
             'db': SCHEMA,
             'starrocks_version': version,
             'anchor': anchor,
             'tables': stats,
+            # 行序只作采样证据，不进逐题字段（QA-06a P2-5）：Q8 并列行 30 次采样是 50/50 翻转，
+            # 逐题写 true/false 会让后来的人以为「这题稳定」而按位置比。
+            'row_order_sampling': {
+                'sampled_at': datetime.now().astimezone().isoformat(timespec='seconds'),
+                'rounds': 2,
+                'stable': [no for no in sorted(stable) if stable[no]],
+                'unstable': [no for no in sorted(stable) if not stable[no]],
+                'note': '仅证据不作判据；判定一律集合语义（judge_rules.rows）',
+            },
         },
         'tolerance': TOL,
         'type_rules': {
@@ -333,7 +342,7 @@ def main():
             'rowset': '其余（含 1 行多列）；expect_value 为对象数组',
         },
         'judge_rules': {
-            'rows': '一律集合语义（同行、同值、容差 0.011），不按行序判对；row_order_stable 仅作证据',
+            'rows': '一律集合语义（同行、同值、容差 0.011），不按行序判对；行序只在 target.row_order_sampling 留采样证据',
             'cols': '06b 只校验列数，不比列名（生成器用 metricId 做别名，与标准 SQL 别名不同）',
             'window': '窗口题除行级对拍外必须断言 SQL 形状（禁 BETWEEN、含 dt > ? 与 dt <= ?、参数为 [anchor-days, anchor]）',
         },

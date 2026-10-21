@@ -65,6 +65,23 @@
 
 ## 修订记录
 
+### v2.9（QA-06a 报告 P2 收口，06a-d 补丁）
+
+- **校验器不再「自证清白」**：`check_golden_set.py` 重算 `sources` 里两份来源的 sha256 并与记录比对（不一致 exit=1，`--allow-stale` 降级），修掉「文档改了、真源没重生成」的静默漂移；`sources` 由 12 位前缀改存全量
+- **`--replay` 变默认**：不带重放时值/列/行/SQL 四类漂移全放行，等于只验「文件自己跟自己对得上」；新增 `--no-replay` 作离线逃生口
+- **两条结构性漏判堵住**：rowset 不得 1 行 1 列（那是 scalar 形状）；窗口题集合固定 `{2,11,12,13,14}`，删一条 `window` 即失败
+- **删掉逐题 `row_order_stable`**：Q8 并列行 30 次采样是 50/50 翻转，逐题 true/false 会误导后来人按位置比；改 `target.row_order_sampling` 汇总留证（本轮采样 unstable=[8]）
+- `expect_value` 与 `expect_rows` 对 rowset 改集合语义比较，不再隐含「顺序有意义」
+- 真源重生成后 sha256 `655695b5…`（原 `6cfa7d9e…`），`eval/run_eval.py` 重跑对齐；`result.json` 的 `dirty_files` 改为排除自身输出文件
+
+### v2.8（Ticket 06c 单测落地）
+
+- 新增 `src/test`：`IrToSqlConverterTest`(11) / `GateChainTest`(11) / `TimeRangeTest`(9)，`mvn test` 31/31 绿；白名单走 `support/TestOntology` 替身，**单测不连库**，评审机无 MySQL/StarRocks 也能跑
+- `pom.xml` 加 `spring-boot-starter-test`（首次需联网拉 mockito/assertj，之后 `-o` 可离线）
+- 闸门⑤无 reject 用例（票面「五道闸各 1 个 reject」第 5 条与 `GateResult` 契约冲突）：改为断言「不 reject + warning 穿透 GateChain」，即 QA-05 P2-1 的回归点
+- **口径纠正**：StarRocks 3.3.8 实测 `SELECT 1/0 IS NULL` → 1，除零本来就返回 NULL 而非抛异常；`NULLIF(分母,0)` 的价值是语义显式 + 跨引擎可移植，不是「防崩溃」。QA-05 U1 的隐含假设据此作废
+- QA-05 U2/U3 收口口径：参数顺序只能锁「from/anchor 写反」（两组相同参数整体互换不可观测）；U3 用 `verify(anchor, times(1))` 证明锚点只取一次、分母复用主表条件
+
 ### v2.7（Ticket 06a/06b 落地 + QA-05 收口）
 
 - **评测真源与执行器分层**：`eval/golden_set.json`（06a，机读真源，`expect_rows` 全部实跑非手抄）→ `eval/run_eval.py`（06b，对拍 + 六层指标）→ `eval/result.json`（含 golden_set sha256 + 被测 commit，成对归档）。`qa/eval_expectations.json` 继续服务 `qa/e2e_stub.py`（带 status/blocker/QA 语义），两者分工不再混用

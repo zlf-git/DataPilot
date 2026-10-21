@@ -67,3 +67,42 @@ Q1 53042.41 ｜ Q2 69 ｜ Q3 15604.97 ｜ Q4 [上海, 江苏, 浙江] ｜ Q5 [4K
 **已知遗留**
 - `row_order_stable` 只是两轮采样的证据字段，不是判据；出现 False 不影响任何题的 pass 判定。
 - 真 LLM 评测不在本票（需 Key），golden_set 本身与 provider 无关。
+
+---
+
+## 06a-d 补丁：QA-06a 报告五条 P2 收口（2026-10-21）
+
+QA-06a 报告（`QA-06a-golden_set转出-测试报告.md`）判 PASS（有条件），5 条 P2 全部落在「校验器覆盖度」上。本补丁全收口。
+
+| 报告条目 | 问题实质 | 落地 |
+|---|---|---|
+| P2-1 `sources.sha256` 只写不校验且已过期 | 校验器不重算来源指纹，「文档改了、真源没重生成」完全静默 | `sources` 改结构化 `{path, sha256(全量)}`（原只存 12 位前缀）；`check_golden_set.py` 新增 `source_drift()` 重算比对，不一致 exit=1，`--allow-stale` 降级为 WARN |
+| P2-2 不带 `--replay` 时四类漂移全放行 | 值/列/行/SQL 漂移只有 replay 能抓，默认却关着 | `--replay` 改为**默认执行**，新增 `--no-replay` 作为离线逃生口 |
+| P2-3 `rowset` 不校验形状 | 1 行 1 列（scalar 形状）标成 rowset 也能过结构校验 | `check_shape` 的 rowset 分支加「不得 1 行 1 列」断言 |
+| P2-4 窗口题 `window` 字段被删不报错 | 06b 靠 `window` 决定哪些题断言 SQL 形状，少一条就静默少断言一题 | 固定 `EXPECTED_WINDOW = {2,11,12,13,14}`，实际集合不等即 FAIL |
+| P2-5 `row_order_stable` 在 Q8 上是事实错误 | Q8 并列行是 50/50 随机翻转，逐题写 true/false 会误导后来人按位置比 | **删掉逐题字段**，改为 `target.row_order_sampling = {sampled_at, rounds, stable[], unstable[], note}` 汇总留证 |
+| 观察项 1 `expect_value` 对 rowset 要求同序 | `json.dumps` 整体比较隐含「顺序有意义」的误解 | 改为 `rowset_eq()` 集合语义比较 |
+
+**验收（2026-10-21，StarRocks 3.3.8-e3816ec，锚点 2026-10-19）**
+- 修复前的实锤：`check_golden_set.py` 直接报 `来源已漂移：docs/评测集.md 记录 39f17f4897a0，实际 6abbf84e0592` —— 与 QA-06a P2-1 指出的漂移完全一致（`fcf3665` 追加跨表对账两行导致），证明新断言不是死代码。
+- 重生成：`gen_golden_set.py` → 15/15 独立执行成功、15/15 与期望表一致、类型分布 5/2/8、行序采样 **14/15 一致，不一致的题 [8]**（本轮采样就抓到了 Q8 翻转，写进 `target.row_order_sampling.unstable`）。
+- `check_golden_set.py`（默认带重放）→ **PASS**：结构 15/15 + 形状匹配 + 来源指纹一致 + 重放一致 15/15。
+- 新 `golden_set.json` sha256 前 16 位 `655695b5435b0d83`（旧值 `6cfa7d9ee1c0b70a`）；`eval/run_eval.py` 已按新真源重跑，`result.json` 重新成对归档。
+
+**校验器变异测试（临时脚本，未入仓）9/9 符合预期**
+
+| 用例 | 期望 | 实际 |
+|---|---|---|
+| 基线（默认带重放） | exit 0 | ✓ |
+| 伪造 `sources.sha256` | exit 1「来源已漂移」 | ✓ |
+| 同上 + `--allow-stale` | exit 0 + WARN | ✓ |
+| Q1 期望值 +1（默认模式） | exit 1「重放结果与落盘不符」 | ✓ |
+| 同上 + `--no-replay` | exit 0（逃生口的已知代价） | ✓ |
+| Q1 类型改 rowset（1 行 1 列） | exit 1「该形状是 scalar」 | ✓ |
+| 删 Q2 的 `window` | exit 1「窗口题集合」 | ✓ |
+| Q8 `expect_value` 乱序 | exit 0（集合语义） | ✓ |
+| Q8 少一行 | exit 1 | ✓ |
+
+**兼容性说明**
+- `row_order_stable` 字段删除后，`eval/run_eval.py` 未引用该字段（只用 `expect_type/expect_rows/expect_cols/expect_value/window/sql_must`），无需改动。
+- `check_golden_set.py --replay` 仍保留为兼容参数（不报错），实际默认已开启。

@@ -1,11 +1,17 @@
 {
   "schema_version": "1.0",
   "ticket": "06a",
-  "generated_at": "2026-10-21T13:08:13+08:00",
+  "generated_at": "2026-10-21T13:48:47+08:00",
   "generator": "eval/gen_golden_set.py",
   "sources": {
-    "questions_and_expect_sql": "docs/评测集.md (sha256:39f17f4897a0)",
-    "sql_must_and_window": "qa/eval_expectations.json (sha256:ed4987a0067e)"
+    "questions_and_expect_sql": {
+      "path": "docs/评测集.md",
+      "sha256": "6abbf84e059205e047e149d12b013d4d541504747affd6c3c72fa8e3a753160a"
+    },
+    "sql_must_and_window": {
+      "path": "qa/eval_expectations.json",
+      "sha256": "ed4987a0067ef312e48eda719fc89bd9c17a5085ae7ea5e008bb09368b4cc11e"
+    }
   },
   "target": {
     "db": "mall_dw",
@@ -32,6 +38,30 @@
         "dt_min": "2026-10-13",
         "dt_max": "2026-10-19"
       }
+    },
+    "row_order_sampling": {
+      "sampled_at": "2026-10-21T13:48:47+08:00",
+      "rounds": 2,
+      "stable": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "unstable": [
+        8
+      ],
+      "note": "仅证据不作判据；判定一律集合语义（judge_rules.rows）"
     }
   },
   "tolerance": 0.011,
@@ -41,7 +71,7 @@
     "rowset": "其余（含 1 行多列）；expect_value 为对象数组"
   },
   "judge_rules": {
-    "rows": "一律集合语义（同行、同值、容差 0.011），不按行序判对；row_order_stable 仅作证据",
+    "rows": "一律集合语义（同行、同值、容差 0.011），不按行序判对；行序只在 target.row_order_sampling 留采样证据",
     "cols": "06b 只校验列数，不比列名（生成器用 metricId 做别名，与标准 SQL 别名不同）",
     "window": "窗口题除行级对拍外必须断言 SQL 形状（禁 BETWEEN、含 dt > ? 与 dt <= ?、参数为 [anchor-days, anchor]）"
   },
@@ -61,7 +91,6 @@
         }
       ],
       "expect_value": 53042.41,
-      "row_order_stable": true,
       "sql_must": [
         "WHERE dt = ?",
         "LIMIT"
@@ -82,7 +111,6 @@
         }
       ],
       "expect_value": 69,
-      "row_order_stable": true,
       "sql_must": [
         "dt > ?",
         "dt <= ?",
@@ -109,7 +137,6 @@
         }
       ],
       "expect_value": 15604.97,
-      "row_order_stable": true,
       "sql_must": [
         "WHERE dt = ?",
         "channel_name = ?"
@@ -140,7 +167,6 @@
         "江苏",
         "浙江"
       ],
-      "row_order_stable": true,
       "sql_must": [
         "SELECT DISTINCT",
         "FROM ads_region_gmv_di",
@@ -168,7 +194,6 @@
         "4K显示器",
         "机械键盘"
       ],
-      "row_order_stable": true,
       "sql_must": [
         "SELECT DISTINCT",
         "FROM ads_product_sales_rank_di",
@@ -213,7 +238,6 @@
           "pay_conversion_rate": 0.075
         }
       ],
-      "row_order_stable": true,
       "sql_must": [
         "GROUP BY channel_name",
         "ORDER BY pay_conversion_rate DESC",
@@ -242,7 +266,6 @@
           "gmv": 15695.05
         }
       ],
-      "row_order_stable": true,
       "sql_must": [
         "GROUP BY province_name",
         "ORDER BY gmv_region DESC",
@@ -265,11 +288,11 @@
           "sale_cnt_product": 4
         },
         {
-          "product_name": "机械键盘",
+          "product_name": "人体工学椅",
           "sale_cnt_product": 3
         },
         {
-          "product_name": "人体工学椅",
+          "product_name": "机械键盘",
           "sale_cnt_product": 3
         }
       ],
@@ -279,15 +302,14 @@
           "sale_cnt_product": 4
         },
         {
-          "product_name": "机械键盘",
+          "product_name": "人体工学椅",
           "sale_cnt_product": 3
         },
         {
-          "product_name": "人体工学椅",
+          "product_name": "机械键盘",
           "sale_cnt_product": 3
         }
       ],
-      "row_order_stable": true,
       "sql_must": [
         "GROUP BY product_name",
         "ORDER BY sale_cnt_product DESC",
@@ -309,7 +331,6 @@
         }
       ],
       "expect_value": 0.9,
-      "row_order_stable": true,
       "sql_must": [
         "WHERE dt = ?"
       ]
@@ -329,7 +350,6 @@
         }
       ],
       "expect_value": 2,
-      "row_order_stable": true,
       "sql_must": [
         "WHERE dt = ?",
         "region = ?"
@@ -357,7 +377,6 @@
           "total_gmv": 138821.73
         }
       ],
-      "row_order_stable": true,
       "sql_must": [
         "dt > ?",
         "dt <= ?",
@@ -393,7 +412,6 @@
           "total_gmv": 254466.85
         }
       ],
-      "row_order_stable": true,
       "sql_must": [
         "dt > ?",
         "dt <= ?",
@@ -429,7 +447,6 @@
           "total_amount": 293469.91
         }
       ],
-      "row_order_stable": true,
       "sql_must": [
         "dt > ?",
         "dt <= ?",
@@ -465,7 +482,6 @@
           "total_gmv": 66184.5
         }
       ],
-      "row_order_stable": true,
       "sql_must": [
         "dt > ?",
         "dt <= ?",
@@ -517,7 +533,6 @@
           "ratio": 0.2942
         }
       ],
-      "row_order_stable": true,
       "sql_must": [
         "GROUP BY channel_name",
         "ROUND(",

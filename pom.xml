@@ -78,6 +78,12 @@
             <artifactId>jsqlparser</artifactId>
             <version>4.9</version>
         </dependency>
+        <!-- 单元测试（Ticket 06c）：JUnit5 + Mockito + AssertJ，仅 test scope -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

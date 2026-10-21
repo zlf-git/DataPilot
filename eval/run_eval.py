@@ -97,6 +97,16 @@ def git(*args):
         return '<%s>' % e
 
 
+def dirty_files(exclude=None):
+    """工作区未提交改动数。默认把本脚本自己的输出文件排除：result.json 是被写的产物，
+    否则「跑一次评测 → 文件变脏 → 记录 dirty=1」会让归档的脏文件数恒为正，失去信息量。"""
+    lines = [l for l in git('status', '--porcelain').splitlines() if l.strip()]
+    if exclude:
+        rel = os.path.relpath(exclude, ROOT).replace('\\', '/')
+        lines = [l for l in lines if not l[3:].strip().strip('"').replace('\\', '/').endswith(rel)]
+    return len(lines)
+
+
 def norm_cell(v):
     """日期列可能被序列化成 epoch 毫秒；Decimal 已被生成器转 float，这里只兜残余类型"""
     if isinstance(v, bool) or v is None:
@@ -273,10 +283,10 @@ def main():
     print('  元数据          %s' % json.dumps(health, ensure_ascii=False))
     print('  白名单字段      %d 个' % len(whitelist))
     print('  golden_set      %s（sha256:%s）' % (os.path.relpath(GOLDEN, ROOT), golden_sha[:12]))
+    _dirty = dirty_files(exclude=args.out)
     print('  被测代码        %s%s' % (
         git('log', '-1', '--oneline') or '<非 git 环境>',
-        '（工作区 %d 处未提交改动）' % len([l for l in git('status', '--porcelain').splitlines() if l.strip()])
-        if git('status', '--porcelain').strip() else ''))
+        '（工作区 %d 处未提交改动）' % _dirty if _dirty else ''))
     print('  真源锚点        %s（生成于 %s）' % (
         (golden.get('target') or {}).get('anchor'), golden.get('generated_at')))
 
@@ -421,7 +431,7 @@ def main():
                        'anchor': (golden.get('target') or {}).get('anchor'),
                        'tolerance': tol},
         'code': {'git_head': git('log', '-1', '--oneline'),
-                 'dirty_files': len([l for l in git('status', '--porcelain').splitlines() if l.strip()])},
+                 'dirty_files': dirty_files(exclude=args.out)},
         'env': {'health': health, 'whitelist_fields': len(whitelist)},
         'metrics': metrics,
         'overall': 'PASS' if overall else 'FAIL',
