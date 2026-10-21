@@ -91,3 +91,9 @@ Ticket 06a
 - 真 LLM 未评（本票仍 stub）。`provider=deepseek` 时同一脚本直接可跑，只换 `--host`。
 - 白名单 `/api/metadata/fields` 返回 28 行、20 个唯一字段名（跨表同名字段重复），去重后才做集合比对。
 - 平均延迟 19.3 ms 是 stub + 本机 StarRocks 的数字，不代表真 LLM 链路，简历引用必须注明口径。
+
+**06a-d 补丁后的重新归档（2026-10-21 14:05）**
+- 06a-d 修完校验器后 `golden_set.json` 重新生成，sha256 由 `6cfa7d9ee1c0…` 变为 `655695b5435b0d83…`；`eval/result.json` 已按新真源重跑落盘，`golden_set.sha256` 与文件一致。
+- 重跑结论不变：PASS，准确率/表命中/字段命中/语法通过 15/15、闸门拦截 0、`sql_shape_score` 49/49、窗口探针 157702.85、平均延迟 31.9 ms（stub）。
+- `result.json` 的 `code.dirty_files` 改为**排除自身输出文件**：否则「跑评测 → 文件变脏 → dirty=1」恒为正，归档失去信息量。实测 `git status` 首行前导空格被 `git()` 的 strip 吃掉，路径不能按固定下标切，已按「状态 + 路径」解析。
+- 归档值：`git_head=376173a`、`dirty_files=0`。
