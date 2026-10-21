@@ -1,29 +1,26 @@
 package com.zlf.datapilot.llm;
 
+import com.zlf.datapilot.ir.QueryIr;
+
 /**
- * LLM 对话结果：文本 + token 用量。
- * 对应 OpenAI 兼容响应里的 choices[0].message.content 与 usage 字段。
+ * LLM 生成结果：结构化 IR + token 用量（AgentOps 成本统计依赖 token）。
  */
-public class ChatResult {
+public class LlmGeneration {
 
-    /** 模型返回文本 */
-    private String content;
+    private QueryIr ir;
 
-    /** 输入 token（prompt） */
     private int promptTokens;
 
-    /** 输出 token（completion） */
     private int completionTokens;
 
-    /** 总 token */
     private int totalTokens;
 
-    public String getContent() {
-        return content;
+    public QueryIr getIr() {
+        return ir;
     }
 
-    public void setContent(String content) {
-        this.content = content;
+    public void setIr(QueryIr ir) {
+        this.ir = ir;
     }
 
     public int getPromptTokens() {

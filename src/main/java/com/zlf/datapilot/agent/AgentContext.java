@@ -1,6 +1,8 @@
 package com.zlf.datapilot.agent;
 
+import com.zlf.datapilot.ir.QueryIr;
 import com.zlf.datapilot.knowledge.model.RecalledMetadata;
+import com.zlf.datapilot.sql.SqlCommand;
 import com.zlf.datapilot.sql.ValidationResult;
 
 import java.util.ArrayList;
@@ -31,8 +33,17 @@ public class AgentContext {
     /** 召回的完整元数据（DDL/字段/指标/术语/few-shot） */
     private RecalledMetadata recalledMetadata = new RecalledMetadata();
 
-    /** 组装好的 Prompt */
+    /** 系统提示词（Ontology 白名单 + 输出约束） */
+    private String systemPrompt;
+
+    /** 用户提示词（问题 + 召回元数据） */
     private String prompt;
+
+    /** LLM 生成的结构化 IR */
+    private QueryIr ir;
+
+    /** IR 转出的受控 SQL（参数化） */
+    private SqlCommand sqlCommand;
 
     /** 生成的 SQL */
     private String generatedSql;
@@ -103,12 +114,36 @@ public class AgentContext {
         this.recalledMetadata = recalledMetadata;
     }
 
+    public String getSystemPrompt() {
+        return systemPrompt;
+    }
+
+    public void setSystemPrompt(String systemPrompt) {
+        this.systemPrompt = systemPrompt;
+    }
+
     public String getPrompt() {
         return prompt;
     }
 
     public void setPrompt(String prompt) {
         this.prompt = prompt;
+    }
+
+    public QueryIr getIr() {
+        return ir;
+    }
+
+    public void setIr(QueryIr ir) {
+        this.ir = ir;
+    }
+
+    public SqlCommand getSqlCommand() {
+        return sqlCommand;
+    }
+
+    public void setSqlCommand(SqlCommand sqlCommand) {
+        this.sqlCommand = sqlCommand;
     }
 
     public String getGeneratedSql() {

@@ -99,10 +99,9 @@ public class Recaller {
                 .collect(Collectors.toList());
         result.setTerms(terms);
 
-        // 指标命中：问题里包含指标名 / 英文名
-        List<MetricDef> metrics = repo.listMetrics(null).stream()
-                .filter(m -> (m.getMetricName() != null && q.contains(m.getMetricName()))
-                        || (m.getEnName() != null && ql.contains(m.getEnName().toLowerCase())))
+        // 指标命中：问题里包含指标名 / 同义词
+        List<MetricDef> metrics = repo.listMetrics().stream()
+                .filter(m -> metricHit(m, q, ql))
                 .collect(Collectors.toList());
         result.setMetrics(metrics);
 
@@ -114,6 +113,21 @@ public class Recaller {
             }
         }
         return hitTables;
+    }
+
+    /** 指标命中判定：指标名精确包含，或同义词（逗号分隔）任一命中 */
+    private boolean metricHit(MetricDef m, String q, String ql) {
+        if (m.getMetricName() != null && q.contains(m.getMetricName())) {
+            return true;
+        }
+        if (m.getMetricAlias() != null) {
+            for (String alias : m.getMetricAlias().split(",")) {
+                if (alias != null && !alias.isBlank() && ql.contains(alias.trim().toLowerCase())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private String buildDdl(SemanticModel t) {

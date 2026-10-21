@@ -1,0 +1,73 @@
+package com.zlf.datapilot.controller;
+
+import com.zlf.datapilot.agent.AgentContext;
+import com.zlf.datapilot.agent.AgentEngine;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+/**
+ * 问数主入口（Ticket 01）。
+ * POST /api/ask {question, sessionId?} → AskResponse（含 IR/SQL/参数/结果/耗时）。
+ */
+@RestController
+@RequestMapping("/api")
+public class AskController {
+
+    private final AgentEngine engine;
+
+    public AskController(AgentEngine engine) {
+        this.engine = engine;
+    }
+
+    @PostMapping("/ask")
+    public AskResponse ask(@RequestBody AskRequest request) {
+        long start = System.currentTimeMillis();
+        AgentContext ctx = engine.run(request.getQuestion(), request.getSessionId());
+        long costMs = System.currentTimeMillis() - start;
+        return toResponse(ctx, costMs);
+    }
+
+    private AskResponse toResponse(AgentContext ctx, long costMs) {
+        AskResponse r = new AskResponse();
+        r.setTraceId(ctx.getTraceId());
+        r.setQuestion(ctx.getUserQuestion());
+        r.setIr(ctx.getIr());
+        r.setSql(ctx.getSqlCommand() != null ? ctx.getSqlCommand().sql() : null);
+        r.setParams(ctx.getSqlCommand() != null ? ctx.getSqlCommand().params() : List.of());
+        // Ticket 01 闸门空实现，返回空列表
+        r.setGates(List.of());
+        r.setRows(ctx.getQueryResult());
+        r.setCostMs(costMs);
+        // answer/chartType/reportHtml 占位（Ticket 11 填充）；失败时把原因放进 answer 便于定位
+        r.setAnswer(ctx.getErrorMessage() != null ? ctx.getErrorMessage() : "");
+        r.setChartType("table");
+        r.setReportHtml("");
+        return r;
+    }
+
+    /** 问数请求体 */
+    public static class AskRequest {
+        private String question;
+        private String sessionId;
+
+        public String getQuestion() {
+            return question;
+        }
+
+        public void setQuestion(String question) {
+            this.question = question;
+        }
+
+        public String getSessionId() {
+            return sessionId;
+        }
+
+        public void setSessionId(String sessionId) {
+            this.sessionId = sessionId;
+        }
+    }
+}

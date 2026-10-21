@@ -14,6 +14,7 @@ public class DatapilotProperties {
     private Embedding embedding = new Embedding();
     private Milvus milvus = new Milvus();
     private Cost cost = new Cost();
+    private Metadata metadata = new Metadata();
 
     public Engine getEngine() {
         return engine;
@@ -53,6 +54,14 @@ public class DatapilotProperties {
 
     public void setCost(Cost cost) {
         this.cost = cost;
+    }
+
+    public Metadata getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(Metadata metadata) {
+        this.metadata = metadata;
     }
 
     /** 业务数据执行引擎配置（可插拔：mysql/starrocks） */
@@ -95,34 +104,16 @@ public class DatapilotProperties {
         }
     }
 
-    /** LLM 配置（OpenAI 兼容，默认 DeepSeek） */
+    /** LLM 配置：provider 决定装配桩(stub)还是真模型(deepseek)；连接信息走 spring.ai.openai.* */
     public static class Llm {
-        private String baseUrl = "https://api.deepseek.com";
-        private String apiKey = "";
-        private String model = "deepseek-chat";
+        private String provider = "stub";
 
-        public String getBaseUrl() {
-            return baseUrl;
+        public String getProvider() {
+            return provider;
         }
 
-        public void setBaseUrl(String baseUrl) {
-            this.baseUrl = baseUrl;
-        }
-
-        public String getApiKey() {
-            return apiKey;
-        }
-
-        public void setApiKey(String apiKey) {
-            this.apiKey = apiKey;
-        }
-
-        public String getModel() {
-            return model;
-        }
-
-        public void setModel(String model) {
-            this.model = model;
+        public void setProvider(String provider) {
+            this.provider = provider;
         }
     }
 
@@ -207,6 +198,19 @@ public class DatapilotProperties {
 
         public void setOutputPricePerMillion(double outputPricePerMillion) {
             this.outputPricePerMillion = outputPricePerMillion;
+        }
+    }
+
+    /** 元数据写接口开关（Ticket 14 落地鉴权前，写接口默认关） */
+    public static class Metadata {
+        private boolean writeEnabled = false;
+
+        public boolean isWriteEnabled() {
+            return writeEnabled;
+        }
+
+        public void setWriteEnabled(boolean writeEnabled) {
+            this.writeEnabled = writeEnabled;
         }
     }
 }

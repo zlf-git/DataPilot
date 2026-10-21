@@ -8,6 +8,15 @@ spring:
     username: root
     password: ${MYSQL_META_PASSWORD:root123}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  ai:
+    openai:
+      # DeepSeek 走 OpenAI 兼容协议；base-url 不要加 /v1，Spring AI 会自动补全路径
+      base-url: https://api.deepseek.com
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.0
 
 datapilot:
   # 可插拔的业务数据执行引擎（数据源轴）
@@ -18,11 +27,9 @@ datapilot:
     username: agent_ro
     password: ${STARROCKS_AGENT_PASSWORD:AgentRo@2026}
 
-  # LLM（OpenAI 兼容，默认 DeepSeek 非推理模型，无 think 污染）
+  # LLM：provider 决定装配桩(stub)还是真模型(deepseek)；真实 provider 的连接信息走 spring.ai.openai.*
   llm:
-    base-url: https://api.deepseek.com
-    api-key: ${DEEPSEEK_API_KEY:sk-在这里填你的key}
-    model: deepseek-chat
+    provider: stub   # stub / deepseek
 
   # Embedding（OpenAI 兼容，Qwen text-embedding-v3，1024 维）
   embedding:
@@ -40,3 +47,7 @@ datapilot:
   cost:
     input-price-per-million: 1.0
     output-price-per-million: 2.0
+
+  # 元数据写接口开关（Ticket 14 落地鉴权前，写接口默认关；本地演示置 true 才允许 PUT）
+  metadata:
+    write-enabled: false

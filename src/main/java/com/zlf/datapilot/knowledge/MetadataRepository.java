@@ -2,6 +2,7 @@ package com.zlf.datapilot.knowledge;
 
 import com.zlf.datapilot.knowledge.model.FewShotExample;
 import com.zlf.datapilot.knowledge.model.FieldMetadata;
+import com.zlf.datapilot.knowledge.model.GateConfig;
 import com.zlf.datapilot.knowledge.model.MetricDef;
 import com.zlf.datapilot.knowledge.model.SemanticModel;
 import com.zlf.datapilot.knowledge.model.TermDict;
@@ -12,7 +13,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 /**
- * 元数据访问层：4 张元数据表（+few-shot）的 CRUD。
+ * 元数据访问层：元数据表的 CRUD（对齐 schema.sql v2）。
  * 用 JdbcTemplate 实现，不引 MyBatis/JPA（最小依赖）。
  */
 @Repository
@@ -40,6 +41,7 @@ public class MetadataRepository {
         m.setFieldName(rs.getString("field_name"));
         m.setFieldType(rs.getString("field_type"));
         m.setFieldComment(rs.getString("field_comment"));
+        m.setFieldRole(rs.getString("field_role"));
         m.setEnumValues(rs.getString("enum_values"));
         return m;
     };
@@ -47,10 +49,16 @@ public class MetadataRepository {
     private static final RowMapper<MetricDef> METRIC_MAPPER = (rs, i) -> {
         MetricDef m = new MetricDef();
         m.setId(rs.getLong("id"));
+        m.setMetricId(rs.getString("metric_id"));
         m.setMetricName(rs.getString("metric_name"));
-        m.setEnName(rs.getString("en_name"));
-        m.setBizDomain(rs.getString("biz_domain"));
-        m.setDefinition(rs.getString("definition"));
+        m.setMetricAlias(rs.getString("metric_alias"));
+        m.setDepartment(rs.getString("department"));
+        m.setMetricSql(rs.getString("metric_sql"));
+        m.setMetricType(rs.getString("metric_type"));
+        m.setTableName(rs.getString("table_name"));
+        m.setDimensions(rs.getString("dimensions"));
+        m.setOwner(rs.getString("owner"));
+        m.setStatus(rs.getString("status"));
         return m;
     };
 
@@ -71,6 +79,22 @@ public class MetadataRepository {
         return m;
     };
 
+    private static final RowMapper<GateConfig> GATE_MAPPER = (rs, i) -> {
+        GateConfig g = new GateConfig();
+        g.setId(rs.getLong("id"));
+        g.setGateName(rs.getString("gate_name"));
+        g.setParamKey(rs.getString("param_key"));
+        g.setParamValue(rs.getString("param_value"));
+        g.setUpdatedBy(rs.getString("updated_by"));
+        return g;
+    };
+
+    private static final String METRIC_COLUMNS =
+            "id, metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status";
+
+    private static final String FIELD_COLUMNS =
+            "id, table_name, field_name, field_type, field_comment, field_role, enum_values";
+
     // ============ 查询 ============
 
     public List<SemanticModel> listTables() {
@@ -81,25 +105,20 @@ public class MetadataRepository {
 
     public List<FieldMetadata> listFields(String tableName) {
         return jdbc.query(
-                "SELECT id, table_name, field_name, field_type, field_comment, enum_values FROM field_metadata WHERE table_name = ?",
+                "SELECT " + FIELD_COLUMNS + " FROM field_metadata WHERE table_name = ?",
                 FIELD_MAPPER, tableName);
     }
 
     public List<FieldMetadata> listAllFields() {
         return jdbc.query(
-                "SELECT id, table_name, field_name, field_type, field_comment, enum_values FROM field_metadata",
+                "SELECT " + FIELD_COLUMNS + " FROM field_metadata",
                 FIELD_MAPPER);
     }
 
-    public List<MetricDef> listMetrics(String bizDomain) {
-        if (bizDomain == null || bizDomain.isBlank()) {
-            return jdbc.query(
-                    "SELECT id, metric_name, en_name, biz_domain, definition FROM metric_def",
-                    METRIC_MAPPER);
-        }
+    public List<MetricDef> listMetrics() {
         return jdbc.query(
-                "SELECT id, metric_name, en_name, biz_domain, definition FROM metric_def WHERE biz_domain = ?",
-                METRIC_MAPPER, bizDomain);
+                "SELECT " + METRIC_COLUMNS + " FROM metric_def",
+                METRIC_MAPPER);
     }
 
     public List<TermDict> listTerms() {
@@ -109,15 +128,33 @@ public class MetadataRepository {
     public List<FewShotExample> listFewShots(String bizDomain) {
         if (bizDomain == null || bizDomain.isBlank()) {
             return jdbc.query(
-                    "SELECT id, question, sql, biz_domain FROM few_shot_example",
+                    "SELECT id, question, `sql`, biz_domain FROM few_shot_example",
                     FEWSHOT_MAPPER);
         }
         return jdbc.query(
-                "SELECT id, question, sql, biz_domain FROM few_shot_example WHERE biz_domain = ?",
+                "SELECT id, question, `sql`, biz_domain FROM few_shot_example WHERE biz_domain = ?",
                 FEWSHOT_MAPPER, bizDomain);
     }
 
-    // ============ 维护（元数据 CRUD，Day5 的 Controller 使用） ============
+    public List<GateConfig> listGateConfigs() {
+        return jdbc.query(
+                "SELECT id, gate_name, param_key, param_value, updated_by FROM gate_config",
+                GATE_MAPPER);
+    }
+
+    public int countMetrics() {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM metric_def", Integer.class);
+    }
+
+    public int countFields() {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM field_metadata", Integer.class);
+    }
+
+    public int countGateConfigs() {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM gate_config", Integer.class);
+    }
+
+    // ============ 维护（元数据 CRUD） ============
 
     public void saveTable(SemanticModel m) {
         jdbc.update(
@@ -135,9 +172,20 @@ public class MetadataRepository {
 
     public void saveMetric(MetricDef m) {
         jdbc.update(
-                "INSERT INTO metric_def (metric_name, en_name, biz_domain, definition) VALUES (?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE en_name = VALUES(en_name), biz_domain = VALUES(biz_domain), definition = VALUES(definition)",
-                m.getMetricName(), m.getEnName(), m.getBizDomain(), m.getDefinition());
+                "INSERT INTO metric_def (metric_id, metric_name, metric_alias, department, metric_sql, metric_type, table_name, dimensions, owner, status) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE metric_name = VALUES(metric_name), metric_alias = VALUES(metric_alias), department = VALUES(department), " +
+                "metric_sql = VALUES(metric_sql), metric_type = VALUES(metric_type), table_name = VALUES(table_name), " +
+                "dimensions = VALUES(dimensions), owner = VALUES(owner), status = VALUES(status)",
+                m.getMetricId(), m.getMetricName(), m.getMetricAlias(), m.getDepartment(), m.getMetricSql(),
+                m.getMetricType(), m.getTableName(), m.getDimensions(), m.getOwner(), m.getStatus());
+    }
+
+    public void saveGateConfig(GateConfig g) {
+        jdbc.update(
+                "INSERT INTO gate_config (gate_name, param_key, param_value, updated_by) VALUES (?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE param_value = VALUES(param_value), updated_by = VALUES(updated_by)",
+                g.getGateName(), g.getParamKey(), g.getParamValue(), g.getUpdatedBy());
     }
 
     public void saveTerm(TermDict t) {

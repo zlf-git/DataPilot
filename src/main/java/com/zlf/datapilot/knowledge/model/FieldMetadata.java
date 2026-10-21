@@ -11,6 +11,8 @@ public class FieldMetadata {
     private String fieldName;
     private String fieldType;
     private String fieldComment;
+    /** 字段角色：dimension维度 / metric指标 */
+    private String fieldRole;
     /** 枚举值 JSON 字符串，如 [{"code":"1","name":"待支付"}] */
     private String enumValues;
 
@@ -52,6 +54,14 @@ public class FieldMetadata {
 
     public void setFieldComment(String fieldComment) {
         this.fieldComment = fieldComment;
+    }
+
+    public String getFieldRole() {
+        return fieldRole;
+    }
+
+    public void setFieldRole(String fieldRole) {
+        this.fieldRole = fieldRole;
     }
 
     public String getEnumValues() {
