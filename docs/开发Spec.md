@@ -39,7 +39,7 @@
 |---|---|
 | `POST /api/ask` | 问数主入口（生成 IR → 闸门 → 执行 → 解释） |
 | `POST /api/ask/preview` | IR 预览：只校验不执行，回 `{traceId, ir, sql, params, gates[], costMs}` |
-| `POST /api/ask/execute` | 执行：body `{traceId, ir}`，重跑闸门 1-4 |
+| `POST /api/ask/execute` | 执行：body `{traceId, ir}`，重跑闸门①~④ |
 | `GET /api/traces` | AgentOps 查询（A1 判据用） |
 | `GET /api/traces/{traceId}` | 单次问数的 trace + span 明细 |
 
@@ -122,7 +122,7 @@ data_agent 库 + 11 表 + seed（11 指标修正口径）、agent_ro 账号 + GR
 | A3 | 解释+报告 | 结果后加 ExplainStep（answer/chartType）+ ReportStep（reportHtml） | 新增两个 Step | AgentEngine 跑通 | 响应含 answer/chartType/reportHtml 三字段 |
 | A4 | 多模型 | LlmClient 工厂 + `datapilot.llm.provider`，DeepSeek/Qwen 都走 OpenAI 兼容 | llm 包 | 无 | 改配置切模型不改代码 |
 | A5 | 引擎接口化 | `SqlExecutor` 抽接口 + `@ConditionalOnProperty` 双实现，白名单按数据源注册 | sql 包 | 无 | 切引擎只改配置，Bean 生效 |
-| A6 | HITL=IR 预览/执行 | 契约拆 `preview`/`execute` 两段（见 §4.6 五钉住点） | controller、闸门 | 闸门就绪 | preview 只校验不执行；execute 重跑闸门 1-4 |
+| A6 | HITL=IR 预览/执行 | 契约拆 `preview`/`execute` 两段（见 §4.6 五钉住点） | controller、闸门 | 闸门就绪 | preview 只校验不执行；execute 重跑闸门①~④ |
 | A7 | 元数据页转必需 | 前端元数据页由「可选」改「必需」，只读展示 + 字段白名单编辑 | 前端.md | 前端从 0 建 | 白名单有维护入口，不用改代码 |
 
 ### 阶段④：口径对齐 + 安全补洞（P2，收口）
@@ -217,7 +217,7 @@ public record QueryIr(
 ### 4.6 HITL（A6 五钉住点，必须同时落地）
 
 1. **契约拆两段**：`POST /api/ask/preview` → `{traceId, ir, sql, params, gates[], costMs}`（只校验不执行）；`POST /api/ask/execute` → body `{traceId, ir}`。
-2. **execute 重跑闸门 1-4**：禁止复用 preview 的校验结果，否则改 value 就是注入口（IN/LIKE 首当其冲）。
+2. **execute 重跑闸门①~④**：禁止复用 preview 的校验结果，否则改 value 就是注入口（IN/LIKE 首当其冲）。
 3. **编辑范围收窄**：只允许改 `filters[].value`、`limit`、`orderBy[].direction`、`dimensions` 增删（限该指标 dimensions 内）；禁止改 `metricId`、`table`、`field`、`metrics` 集合。
 4. **结构变更=REPLAN**：换指标/换维度 = 重新生成，记 `agent_step` span_type=hitl、status=REPLAN，不混进「确认」语义。
 5. **审计可追溯**：preview 与 execute 各落一条 agent_step，`agent_run.final_sql` 存最终执行版，`status` 增 PREVIEW。
@@ -312,7 +312,7 @@ mvn test
 | 4 | **中文编码** | MySQL stdin 默认 latin1 双重编码 | 所有含中文 SQL 加 `--default-character-set=utf8mb4` |
 | 5 | **SR 版本与 JDBC 驱动兼容性** | StarRocks 3.3.8 与 MySQL JDBC 驱动版本需匹配 | 用 9030 端口 + MySQL 8.0 驱动直连，联调期实测 |
 | 6 | **旧代码残留** | 手写 DeepSeek/Qwen/Milvus 客户端与新 Spring AI 路线并存 | F-06 明确替换清单，避免两套 LLM 调用 |
-| 7 | **HITL 退化** | 若 execute 复用 preview 校验结果，改 value 即注入 | A6 五钉住点硬约束，execute 强制重跑闸门 1-4 |
+| 7 | **HITL 退化** | 若 execute 复用 preview 校验结果，改 value 即注入 | A6 五钉住点硬约束，execute 强制重跑闸门①~④ |
 | 8 | **推 GitHub 直连不稳** | 本次 push 已 SSL 失败 | 铁律：不反复重试，下个对话再推 |
 
 ---

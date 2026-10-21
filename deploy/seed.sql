@@ -5,7 +5,9 @@
 --   C4① 订单量拆 trade(SUM total_order_cnt) / channel / region(SUM order_cnt)
 --   C4② 总GMV 加 SUM
 --   C4③ 支付用户数标 uv（跨期不可加）
+--   C4④ 商品销售额「含未支付明细」——与 gmv_total（成交口径）不同源，禁止互相替代，也不做跨口径占比
 --   C5   商品销售额与总GMV 分名，不复用「GMV」词
+--   C5② 支付用户数跨期不可加：SUM 多日会重复计人，累计必须重算 COUNT(DISTINCT)，当前 ADS 层无用户明细 → 显式拒绝
 -- ============================================================
 SET NAMES utf8mb4;
 
@@ -52,6 +54,10 @@ INSERT IGNORE INTO field_metadata (table_name, field_name, field_type, field_com
 ('ads_product_sales_rank_di','sale_amount','decimal','销售额/销售金额/成交金额（含未支付明细）','metric',NULL);
 
 -- 3. 指标口径（13 指标，修正后口径）
+-- ⚠️ sale_amount_product（商品销售额）是「含未支付明细」的口径，和 gmv_total（成交口径）不同源：
+--    两者不能互相替代，也不提供「商品销售额 / 总GMV」这类跨口径比值（Ticket 16 / C4④）。
+-- ⚠️ paid_user_cnt（支付用户数）是 uv 去重人数，跨期不可加：SUM 多日 = 重复计人
+--    （Ticket 16 / C5②）。「近 N 天累计支付用户」当前不支持，生成器应显式拒绝而不是返回偏大的数。
 -- Ticket 05：metric_type=composite 的两种写法
 --   ① 同表比值：metric_sql 直接写 A/B（如 pay_rate）→ 生成器输出 ROUND(A/B,4)
 --   ② 跨表比值：metric_sql 只写分子，分母填 denominator_table + denominator_sql

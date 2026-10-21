@@ -6,6 +6,7 @@ import com.zlf.datapilot.agent.trace.SpanType;
 import com.zlf.datapilot.agent.trace.TraceSpan;
 import com.zlf.datapilot.config.DatapilotProperties;
 import com.zlf.datapilot.knowledge.EngineWhitelist;
+import com.zlf.datapilot.knowledge.SchemaDrift;
 import com.zlf.datapilot.llm.LlmClient;
 import com.zlf.datapilot.llm.LlmDescriptor;
 import com.zlf.datapilot.service.MetadataService;
@@ -29,6 +30,8 @@ import java.util.Map;
  *       切模型后同样一眼可确认；<b>不回显 Key 值</b>。</li>
  *   <li>{@code GET /api/health/traces}：埋点 span 目录与「一次成功运行该有多少 span」（Ticket 09），
  *       e2e 脚本读它当基线，不写死数字。</li>
+ *   <li>{@code GET /api/health/drift}：语义层 ↔ 物理表一致性巡检（Ticket 16），
+ *       抓「元数据配了但库里没有 / 库里有但元数据没配」的表与列。</li>
  * </ul>
  */
 @RestController
@@ -37,16 +40,18 @@ public class HealthController {
 
     private final MetadataService service;
     private final EngineWhitelist engineWhitelist;
+    private final SchemaDrift schemaDrift;
     private final LlmClient llmClient;
     private final SessionStore sessions;
     private final PreviewStore previews;
     private final DatapilotProperties props;
 
     public HealthController(MetadataService service, EngineWhitelist engineWhitelist,
-                            LlmClient llmClient, SessionStore sessions, PreviewStore previews,
-                            DatapilotProperties props) {
+                            SchemaDrift schemaDrift, LlmClient llmClient, SessionStore sessions,
+                            PreviewStore previews, DatapilotProperties props) {
         this.service = service;
         this.engineWhitelist = engineWhitelist;
+        this.schemaDrift = schemaDrift;
         this.llmClient = llmClient;
         this.sessions = sessions;
         this.previews = previews;
@@ -65,6 +70,17 @@ public class HealthController {
     @GetMapping("/engine")
     public Map<String, Object> engineHealth() {
         return engineWhitelist.report();
+    }
+
+    /**
+     * 语义层 ↔ 物理表一致性巡检（Ticket 16）：元数据配了但库里没有的表/列、库里多出来的表/列。
+     *
+     * <p>与 {@code /engine} 是两件事：/engine 比「引擎声明 ↔ 元数据」，本接口比「元数据 ↔ 真实 DDL」。
+     * 后者能抓到「表改名了但元数据没跟着改」这类只在执行期才炸的问题。只读诊断，不参与拦截。
+     */
+    @GetMapping("/drift")
+    public Map<String, Object> driftHealth() {
+        return schemaDrift.report();
     }
 
     @GetMapping("/llm")

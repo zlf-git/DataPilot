@@ -1,6 +1,6 @@
 # DataPilot Agent 开发 Tickets
 
-拆分自 `docs/开发Spec.md` **v2.1**，共 21 个 ticket，按依赖顺序排列，每票含预估工时（tickets 自身版本 v2.24）。
+拆分自 `docs/开发Spec.md` **v2.1**，共 21 个 ticket，按依赖顺序排列，每票含预估工时（tickets 自身版本 v2.25）。
 
 ## 执行顺序（基础 → 核心 → 边界 → 收尾）
 
@@ -64,6 +64,19 @@
 5. **字段层回退分支**：本期不做（Q8 靠补 sale_cnt_product 指标解决，不弱化 Ontology 白名单卖点）。
 
 ## 修订记录
+
+### v2.25（Ticket 16 文档与 seed 收口）
+
+- **D1 编号唯一源**：`五道闸门.md` 升 v1.2 并立「编号约定」（闸门①~⑤ 圈号、代码只认中文名），
+  正文标题与 `前端.md`/`开发Spec.md`/票面 12·05/README 的「闸门 N-M」全部换成 ①~④；
+  **QA-\*.md 不改**（第三方报告是历史原件，改它让 grep 变绿等于伪造评审记录）
+- **C4/C5 口径**：seed 头部补 C4④「商品销售额含未支付明细」、C5②「支付用户数跨期不可加」，
+  `Ontology定义.md` 新增 §6.5 两条边界（含「用户问到时怎么答」的台词）
+- **G1 阈值写死常量**：`ResultCheckGate` 加负值告警（0.01 容差）与空值比例告警（20%），两者都是 `static final`，
+  **不进 gate_config** —— 配置项只留给「因环境而异」的参数，不留给「判断标准」（审计 P1#18）
+- **E2 验收公式**：`评测集.md` §3.1 写死六层指标分母一律 15、闸门拦截率正常态目标 0%、平均延迟含 LLM 且 stub/真模型分开报
+- **交接项落地**：新增 `SchemaDrift` + `GET /api/health/drift`（元数据 ↔ 真实表/列巡检），Ticket 07 的 `listTables()` 终于有调用方
+- 数据：`mvn -o test` **207/207**、`check_docs_consistency` 25/25、`eval` PASS 15/15（54.6 ms、拦截率 0%），其余脚本无回归
 
 ### v2.24（Ticket 15 代价公式补洞）
 
@@ -130,7 +143,7 @@
 ### v2.18（Ticket 12 HITL 预览/执行两段）
 
 - **`POST /api/ask/preview` 只校验不执行**：跑到「SQL 已生成 + 四道闸门全过」就停，`rows` 恒为空、trace 里没有 `execute` 步骤；run 状态落 `PREVIEW`（不混进成功率），`hitl_preview` 的 `status=PREVIEW`、`span_type=hitl`
-- **`POST /api/ask/execute` 重跑闸门 1~4**：拿快照 IR **重新 `convert` 出 SQL**（不复用预览那份文本 —— 文本一经人手就说不清还是不是那条被校验过的查询），再跑闸门①②③④；**不重新调 LLM**（10 次 execute 运行 `total_tokens=0`）
+- **`POST /api/ask/execute` 重跑闸门①~④**：拿快照 IR **重新 `convert` 出 SQL**（不复用预览那份文本 —— 文本一经人手就说不清还是不是那条被校验过的查询），再跑闸门①~④；**不重新调 LLM**（10 次 execute 运行 `total_tokens=0`）
 - **编辑范围收窄且由服务端判定**：只认 `filters[].value` / `limit` / `orderBy[].direction` / `dimensions`，别的一律 `REPLAN`。合法性不看客户端自述，而是拿快照 IR 与提交 IR 逐字段 diff（否则「我只改了 value」这句自述本身就是攻击面）
 - **结构变更 → `agent_step.status=REPLAN` + `agent_run.status=REJECTED`**，一条 SQL 都不发；不做「部分应用」（改一半的结果既不是用户改的、也不是预览那份，是最坏的一种）
 - **服务端字段执行前清零**：`timeRange.anchor` 与 `compareOffsetDays` 由服务端重算，客户端指定 `compareOffsetDays` 直接 REPLAN

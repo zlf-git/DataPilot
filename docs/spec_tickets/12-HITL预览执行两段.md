@@ -13,7 +13,7 @@ preview/execute 两段契约，五钉住点全落地，span_type 与 status 区�
 
 ## 任务
 1. /api/ask/preview 只校验不执行
-2. /api/ask/execute 重跑闸门 1-4
+2. /api/ask/execute 重跑闸门①~④
 3. 编辑范围收窄（只改 value/limit/orderBy.direction/dimensions）
 4. 结构变更记 REPLAN（status）
 5. agent_run.final_sql 存最终版；**agent_step.status 增 PREVIEW、span_type=hitl**（PREVIEW 是 status 不是 span_type，span_type 枚举来自 Ticket 09 的 hitl）
@@ -108,7 +108,7 @@ mvn 已退出）测到 **51.3 ms** —— 说明那 20ms 是同时跑着 mvn/容
 
 - **快照在进程内存**，重启即丢（理由同 Ticket 10 的会话：每轮写元数据库会给主链路加一次 fsync）。
   代价是「确认页刷新一下就失效」，用户只能重新预览。
-- **一个预览可在 TTL 内执行多次**，每次都会重跑闸门 1~4。没做成一次性令牌：一次执行失败（比如数据源抖动）
+- **一个预览可在 TTL 内执行多次**，每次都会重跑闸门①~④。没做成一次性令牌：一次执行失败（比如数据源抖动）
   就得重新预览，体验代价大于「重复执行同一条只读查询」的风险。
 - **execute 不重跑改写**。预览是「对这一份查询的确认」，不是「对最新上下文的确认」；
   这中间会话又加了几轮，执行仍然按当初那份问题走。
