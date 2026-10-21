@@ -99,12 +99,24 @@ def git(*args):
 
 def dirty_files(exclude=None):
     """工作区未提交改动数。默认把本脚本自己的输出文件排除：result.json 是被写的产物，
-    否则「跑一次评测 → 文件变脏 → 记录 dirty=1」会让归档的脏文件数恒为正，失去信息量。"""
+    否则「跑一次评测 → 文件变脏 → 记录 dirty=1」会让归档的脏文件数恒为正，失去信息量。
+
+    注意：git() 会对整体输出做 strip，首行的前导空格（porcelain 的 XY 位）因此丢失，
+    不能按固定下标切路径——这里按「第一个空白前是状态、其余是路径」解析。
+    """
     lines = [l for l in git('status', '--porcelain').splitlines() if l.strip()]
-    if exclude:
-        rel = os.path.relpath(exclude, ROOT).replace('\\', '/')
-        lines = [l for l in lines if not l[3:].strip().strip('"').replace('\\', '/').endswith(rel)]
-    return len(lines)
+    if not exclude:
+        return len(lines)
+    rel = os.path.relpath(exclude, ROOT).replace('\\', '/')
+    kept = []
+    for l in lines:
+        s = l.strip()
+        parts = s.split(None, 1)
+        path = parts[1].strip().strip('"').replace('\\', '/') if len(parts) > 1 else ''
+        if path.endswith(rel):
+            continue
+        kept.append(l)
+    return len(kept)
 
 
 def norm_cell(v):
