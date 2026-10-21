@@ -33,8 +33,10 @@ public class StubLlmClient implements LlmClient {
     private static final int STUB_COMPLETION_TOKENS = 100;
 
     private final List<StubEntry> entries = new ArrayList<>();
+    private final ObjectMapper objectMapper;
 
     public StubLlmClient(ResourcePatternResolver resourceLoader, ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
         Resource[] resources;
         try {
             resources = resourceLoader.getResources("classpath:stub_ir/*.json");
@@ -68,7 +70,13 @@ public class StubLlmClient implements LlmClient {
             String normPrompt = normalize(userPrompt);
             for (StubEntry e : entries) {
                 if (!e.normalizedQuestion.isEmpty() && normPrompt.contains(e.normalizedQuestion)) {
-                    g.setIr(e.getIr());
+                    // 部分匹配（prompt 比 stub 题面长）：可能是寒暄包裹，也可能是双意向拼接。
+                    // 记 debug 便于 06b 造变体集时排查「第二个问题被静默丢弃」。
+                    if (!normPrompt.equals(e.normalizedQuestion)) {
+                        log.debug("stub 部分匹配：命中「{}」，prompt 归一化后长度 {} > {}",
+                                e.getQuestion(), normPrompt.length(), e.normalizedQuestion.length());
+                    }
+                    g.setIr(deepCopy(e.getIr()));
                     return g;
                 }
             }
@@ -76,6 +84,22 @@ public class StubLlmClient implements LlmClient {
         // 未命中任何 stub：返回空 IR（metrics 为空），由 AgentEngine 报「无法识别查询意图」
         g.setIr(new QueryIr());
         return g;
+    }
+
+    /**
+     * 深拷贝后返回：entries 里的 IR 是单例，直接交给下游会被 03/05 就地补字段（selectMode/timeRange）
+     * 时跨请求串数据（01c 测试报告 P2-3）。拷贝失败才退化为返回原实例。
+     */
+    private QueryIr deepCopy(QueryIr ir) {
+        if (ir == null) {
+            return null;
+        }
+        try {
+            return objectMapper.convertValue(ir, QueryIr.class);
+        } catch (Exception e) {
+            log.warn("stub IR 深拷贝失败，退化为共享实例：{}", e.getMessage());
+            return ir;
+        }
     }
 
     /** 归一化：去空白/标点、「号」→「日」、全角转半角、转小写，用于模糊匹配 */

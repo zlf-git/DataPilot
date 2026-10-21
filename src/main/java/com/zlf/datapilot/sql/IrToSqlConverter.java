@@ -1,8 +1,10 @@
 package com.zlf.datapilot.sql;
 
+import com.zlf.datapilot.ir.DimensionRef;
 import com.zlf.datapilot.ir.Filter;
 import com.zlf.datapilot.ir.FilterOp;
 import com.zlf.datapilot.ir.MetricRef;
+import com.zlf.datapilot.ir.OrderBy;
 import com.zlf.datapilot.ir.QueryIr;
 import com.zlf.datapilot.knowledge.MetadataRepository;
 import com.zlf.datapilot.knowledge.model.MetricDef;
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * IR → 受控 SQL 转换器。
@@ -18,6 +21,12 @@ import java.util.regex.Pattern;
  *
  * <p>Ticket 01 最简实现：单指标聚合 + 单表 + 等值过滤（EQ）。
  * selectMode/timeRange/复合指标/别名排序由 03/04/05 扩展。
+ *
+ * <p><b>失败契约（01c 测试报告 P2-1）</b>：IR 里出现本票尚未实现的语义
+ * （明细模式 / 维度分组 / 排序 / LIMIT），一律显式抛「未实现（Ticket xx）」，
+ * <b>禁止静默忽略</b>——静默丢维度会生成「全表汇总」，SQL 能跑、有行、answer 为空，
+ * 看起来成功但数值全错（Q6/Q7/Q11~Q13/Q15 就是这么被静默算错的），
+ * 比报错危险得多，且会把失败错误归因到口径或模板。
  */
 @Component
 public class IrToSqlConverter {
@@ -32,13 +41,31 @@ public class IrToSqlConverter {
     }
 
     public SqlCommand convert(QueryIr ir) {
+        if (ir == null) {
+            throw new IllegalArgumentException("IR 为空");
+        }
+        // ① 未实现语义一律显式拒绝，绝不静默降级（见类注释「失败契约」）
         if (ir.getMetrics() == null || ir.getMetrics().isEmpty()) {
-            throw new IllegalArgumentException("暂不支持无指标查询（DETAIL 明细模式由 Ticket 03 引入）");
+            throw new IllegalArgumentException(
+                    "明细/DISTINCT 模式未实现（Ticket 03）：当前 IR 无指标，拒绝生成错误 SQL");
         }
         if (ir.getMetrics().size() > 1) {
-            throw new IllegalArgumentException("Ticket 01 仅支持单指标，当前 " + ir.getMetrics().size() + " 个");
+            throw new IllegalArgumentException("多指标未实现（Ticket 03/05）：当前 " + ir.getMetrics().size() + " 个");
+        }
+        if (ir.getDimensions() != null && !ir.getDimensions().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "维度分组未实现（Ticket 03）：IR 含维度 " + dimensionNames(ir)
+                            + "，拒绝静默降级为全表汇总");
+        }
+        if (ir.getOrderBy() != null && !ir.getOrderBy().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "排序未实现（Ticket 03）：IR 含 orderBy " + orderByNames(ir) + "，拒绝静默忽略");
+        }
+        if (ir.getLimit() != null) {
+            throw new IllegalArgumentException("LIMIT 未实现（Ticket 03）：IR 含 limit=" + ir.getLimit());
         }
 
+        // ② 正常路径：单指标 + 单表 + 等值过滤
         MetricRef metricRef = ir.getMetrics().get(0);
         MetricDef metric = repo.listMetrics().stream()
                 .filter(m -> m.getMetricId() != null && m.getMetricId().equals(metricRef.getMetricId()))
@@ -68,6 +95,18 @@ public class IrToSqlConverter {
         }
 
         return SqlCommand.of(sql.toString(), params);
+    }
+
+    private static String dimensionNames(QueryIr ir) {
+        return ir.getDimensions().stream()
+                .map(DimensionRef::getField)
+                .collect(Collectors.joining(",", "[", "]"));
+    }
+
+    private static String orderByNames(QueryIr ir) {
+        return ir.getOrderBy().stream()
+                .map(OrderBy::getField)
+                .collect(Collectors.joining(",", "[", "]"));
     }
 
     private String buildCondition(Filter f, List<Object> params) {

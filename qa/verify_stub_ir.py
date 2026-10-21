@@ -1,36 +1,57 @@
 # -*- coding: utf-8 -*-
 """
-Ticket 01c 验收脚本：断言 15 个 stub_ir/q{n}.json 齐全 + 每条可反序列化为合法 QueryIr。
-校验 metricId/field 落在 Ontology 白名单（11 指标 / 20 唯一字段），语义合法。
-用法：python verify_stub_ir.py
+Ticket 01c 静态验收：15 个 stub_ir/q{n}.json 齐全 + 每条可反序列化为合法 QueryIr
++ metricId/field 落在 Ontology 白名单。
+
+白名单不再手抄常量，改为启动服务后从运行时真值拉取（01c 测试报告 P1-4）：
+  GET /api/metrics           → metricId 全集
+  GET /api/metadata/fields   → field 全集
+服务不可达时直接退出码 2（拒绝用过期常量给假绿）。
+
+用法：python verify_stub_ir.py [host]   默认 http://127.0.0.1:18080
+退出码：0 通过 / 1 断言失败 / 2 白名单取不到（服务未启动）
 """
 import json
 import os
 import sys
+import urllib.request
+
+HOST = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:18080'
 
 BASE = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', 'src', 'main', 'resources', 'stub_ir'))
 
-# metric_def 白名单（11 指标）
-METRIC_IDS = {
-    'gmv_total', 'gmv_channel', 'gmv_region', 'sale_amount_product',
-    'order_cnt_total', 'order_cnt_channel', 'order_cnt_region',
-    'paid_order_cnt', 'paid_user_cnt', 'pay_rate', 'pay_conversion_rate',
-}
-
-# field_metadata 白名单（28 行去重后 20 个唯一字段名）
-FIELD_NAMES = {
-    'dt', 'total_order_cnt', 'paid_order_cnt', 'total_gmv', 'paid_user_cnt',
-    'channel', 'channel_name', 'visit_uv', 'order_cnt', 'gmv',
-    'order_conversion_rate', 'pay_conversion_rate',
-    'province', 'province_name', 'region',
-    'product_id', 'product_name', 'category_name', 'sale_cnt', 'sale_amount',
-}
-
 VALID_OPS = {'EQ', 'IN', 'LIKE', 'GT', 'GE', 'LT', 'LE'}
 
 
-def check_ir(ir):
+def get_json(path):
+    with urllib.request.urlopen(HOST + path, timeout=10) as resp:
+        return json.loads(resp.read().decode('utf-8'))
+
+
+def load_whitelist():
+    """从运行时真值取白名单；取不到就退出码 2，不给假绿"""
+    try:
+        metrics = get_json('/api/metrics')
+        fields = get_json('/api/metadata/fields')
+    except Exception as e:
+        print('SKIP: 无法从 %s 取白名单真值（%s）' % (HOST, e))
+        print('      先启动服务再跑本脚本：mvn -o spring-boot:run -Dspring-boot.run.arguments=--server.port=18080')
+        sys.exit(2)
+
+    metric_ids = {m.get('metricId') for m in metrics if m.get('metricId')}
+    # 字段接口返回「表×字段」行，按 fieldName 去重
+    field_names = {f.get('fieldName') for f in fields if f.get('fieldName')}
+    if not metric_ids or not field_names:
+        print('SKIP: 白名单为空（metric=%d / field=%d），可能元数据库未初始化'
+              % (len(metric_ids), len(field_names)))
+        sys.exit(2)
+    print('白名单取自运行时：%d 指标 / %d 唯一字段（%d 行）'
+          % (len(metric_ids), len(field_names), len(fields)))
+    return metric_ids, field_names
+
+
+def check_ir(ir, metric_ids, field_names, orderby_style):
     assert isinstance(ir, dict), 'ir 必须是 JSON 对象'
     assert 'question' in ir and ir['question'].strip(), 'ir 缺 question'
     metrics = ir.get('metrics') or []
@@ -42,17 +63,19 @@ def check_ir(ir):
     assert isinstance(filters, list), 'filters 必须是数组'
     assert isinstance(order_by, list), 'orderBy 必须是数组'
     for m in metrics:
-        assert m.get('metricId') in METRIC_IDS, '非法 metricId: %r' % m.get('metricId')
+        assert m.get('metricId') in metric_ids, '指标不在库内白名单: %r' % m.get('metricId')
     for d in dimensions:
-        assert d.get('field') in FIELD_NAMES, '非法维度 field: %r' % d.get('field')
+        assert d.get('field') in field_names, '维度字段不在白名单: %r' % d.get('field')
     for f in filters:
-        assert f.get('field') in FIELD_NAMES, '非法过滤 field: %r' % f.get('field')
+        assert f.get('field') in field_names, '过滤字段不在白名单: %r' % f.get('field')
         assert f.get('op') in VALID_OPS, '非法 op: %r' % f.get('op')
         assert 'value' in f, 'filter 缺 value'
     for o in order_by:
         fld = o.get('field')
-        assert fld in FIELD_NAMES or fld in METRIC_IDS, '非法排序字段: %r' % fld
+        # Ticket 03 契约：orderBy.field ∈ metricId ∪ 字段名（两种写法都合法，但必须记录用了哪种）
+        assert fld in field_names or fld in metric_ids, '排序字段不在 metricId/字段白名单: %r' % fld
         assert o.get('direction') in ('asc', 'desc'), '非法排序方向: %r' % o.get('direction')
+        orderby_style[fld] = 'metricId' if fld in metric_ids else 'field'
     limit = ir.get('limit')
     if limit is not None:
         assert isinstance(limit, int) and limit > 0, 'limit 必须正整数'
@@ -63,6 +86,8 @@ def main():
         print('FAIL: stub_ir 目录不存在:', BASE)
         sys.exit(1)
 
+    metric_ids, field_names = load_whitelist()
+
     files = sorted(
         (f for f in os.listdir(BASE) if f.startswith('q') and f.endswith('.json')),
         key=lambda x: int(x[1:-5]))
@@ -72,15 +97,25 @@ def main():
     assert not missing, '缺失文件: %s' % missing
     print('文件齐全：%d 个' % len(expected))
 
+    orderby_style = {}
+    used_metrics, used_fields = set(), set()
     for name in files:
         with open(os.path.join(BASE, name), encoding='utf-8') as fp:
             data = json.load(fp)
         assert 'question' in data and data['question'].strip(), '%s 缺 question' % name
         assert 'ir' in data, '%s 缺 ir' % name
-        check_ir(data['ir'])
+        check_ir(data['ir'], metric_ids, field_names, orderby_style)
+        ir = data['ir']
+        used_metrics.update(m['metricId'] for m in (ir.get('metrics') or []))
+        used_fields.update(d['field'] for d in (ir.get('dimensions') or []))
+        used_fields.update(f['field'] for f in (ir.get('filters') or []))
         print('  OK %-8s %s' % (name, data['question']))
 
-    print('全部通过：%d/%d 条可反序列化且字段合法' % (len(files), len(expected)))
+    print('\n实引用 %d 个指标 / %d 个字段，全部在库内白名单' % (len(used_metrics), len(used_fields)))
+    if orderby_style:
+        print('orderBy.field 写法分布（Ticket 03 需同时支持两种）：%s'
+              % json.dumps(orderby_style, ensure_ascii=False))
+    print('全部通过：%d/%d 条可反序列化且字段合法（白名单来自运行时）' % (len(files), len(expected)))
 
 
 if __name__ == '__main__':
