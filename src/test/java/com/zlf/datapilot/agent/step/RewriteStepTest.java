@@ -162,4 +162,87 @@ class RewriteStepTest {
         assertThat(c.getErrorMessage()).doesNotContain("最近 7 天");
         assertThat(c.getComparisonDays()).isNull();
     }
+
+    // ---------------- 口径边界守卫（Ticket 17 / C5②） ----------------
+    // 这一组测的不是「拦得住」，而是「拦得准」：uv 指标泛化到别名、按天问法必须放行、
+    // 「总」不能当跨期词。QA-16 P2-1 指出的正是「文档承诺显式拒绝、代码只回无法识别」。
+
+    @Test
+    @DisplayName("C5②：近 7 天累计支付用户数 → 显式拒绝，并说明口径原因（不是「换个问法」）")
+    void crossPeriodUvIsRejectedWithMetricReason() {
+        AgentContext c = ctx("近7天累计支付用户数是多少", null);
+        step.execute(c);
+
+        // 不给 LLM 自由发挥的机会，也不能落到「无法识别查询意图」那种不解释的兜底
+        assertThat(c.getErrorMessage())
+                .contains("当天去重人数")
+                .contains("COUNT(DISTINCT user_id)")
+                .contains("不会给一个偏大的数")
+                .doesNotContain("无法识别");
+        // 文案要能照着改问：既给按天，也给可加的替代指标
+        assertThat(c.getErrorMessage()).contains("每天的支付用户数").contains("支付订单数");
+        assertThat(c.getRewrittenQuestion()).isNull();
+        assertThat(c.getRejectedBy()).isEqualTo("rewrite");
+    }
+
+    @Test
+    @DisplayName("C5②：别名（成交用户数/付费用户数）同样拦 —— 词表对齐 metric_def 的 aliases")
+    void aliasesAreCovered() {
+        for (String q : List.of("近7天合计成交用户数是多少", "本月付费用户数是多少", "最近30天付费人数")) {
+            AgentContext c = ctx(q, null);
+            step.execute(c);
+            assertThat(c.getErrorMessage()).as(q).contains("当天去重人数");
+        }
+    }
+
+    @Test
+    @DisplayName("单日问法放行：10月19日的支付用户数（当天去重，没有跨期相加）")
+    void singleDayUvPassesThrough() {
+        AgentContext c = ctx("10月19日的支付用户数是多少", null);
+        step.execute(c);
+
+        assertThat(c.getErrorMessage()).isNull();
+        assertThat(c.getRewrittenQuestion()).isEqualTo("10月19日的支付用户数是多少");
+    }
+
+    @Test
+    @DisplayName("按天问法放行：近 7 天每天的支付用户数（每天各自去重，合法）")
+    void perDayUvPassesThrough() {
+        for (String q : List.of("近7天每天的支付用户数", "近7天每日支付用户数走势", "近7天支付用户数的按天趋势")) {
+            AgentContext c = ctx(q, null);
+            step.execute(c);
+            assertThat(c.getErrorMessage()).as(q).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("可加指标不受影响：近 7 天累计支付订单数 / 总 GMV 照常走")
+    void additiveMetricsAreUntouched() {
+        for (String q : List.of("近7天累计支付订单数是多少", "10月19日当天的总GMV是多少")) {
+            AgentContext c = ctx(q, null);
+            step.execute(c);
+            assertThat(c.getErrorMessage()).as(q).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("「总」不当跨期词：支付用户数占总订单数的比例 不该被拦（占比不是求和）")
+    void totalInRatioIsNotCrossPeriod() {
+        AgentContext c = ctx("支付用户数占总订单数的比例是多少", null);
+        step.execute(c);
+
+        assertThat(c.getErrorMessage()).isNull();
+    }
+
+    @Test
+    @DisplayName("有会话时同样先拦口径：守卫在改写之前，不依赖上一轮")
+    void scopeGuardRunsBeforeRewrite() {
+        remember("s1", "近7天累计支付订单数是多少", 7);
+
+        AgentContext c = ctx("近7天累计支付用户数是多少", "s1");
+        step.execute(c);
+
+        assertThat(c.getErrorMessage()).contains("当天去重人数");
+        assertThat(c.getComparisonDays()).isNull();
+    }
 }

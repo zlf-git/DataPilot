@@ -57,7 +57,8 @@ INSERT IGNORE INTO field_metadata (table_name, field_name, field_type, field_com
 -- ⚠️ sale_amount_product（商品销售额）是「含未支付明细」的口径，和 gmv_total（成交口径）不同源：
 --    两者不能互相替代，也不提供「商品销售额 / 总GMV」这类跨口径比值（Ticket 16 / C4④）。
 -- ⚠️ paid_user_cnt（支付用户数）是 uv 去重人数，跨期不可加：SUM 多日 = 重复计人
---    （Ticket 16 / C5②）。「近 N 天累计支付用户」当前不支持，生成器应显式拒绝而不是返回偏大的数。
+--    （Ticket 16 / C5②）。「近 N 天累计支付用户」当前不支持：由 RewriteStep#unsupportedScope
+--    在生成 IR 之前显式拒绝并说明口径（Ticket 17 落地），不给偏大的数，也不退回「无法识别」。
 -- Ticket 05：metric_type=composite 的两种写法
 --   ① 同表比值：metric_sql 直接写 A/B（如 pay_rate）→ 生成器输出 ROUND(A/B,4)
 --   ② 跨表比值：metric_sql 只写分子，分母填 denominator_table + denominator_sql

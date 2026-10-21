@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * ① 问题改写节点（Ticket 10 起承担多轮补全）。
@@ -24,6 +25,10 @@ import java.util.List;
  * </ul>
  *
  * <p>没有 sessionId、会话为空或已过 TTL 时一律透传，行为与 Ticket 01 完全一致。
+ *
+ * <p><b>另有口径边界守卫</b>（Ticket 17 / C5②）：去重人数类指标（uv）在多天上相加会重复计人，
+ * 而 ADS 层没有用户明细、无法重算 {@code COUNT(DISTINCT)}。这类问题必须<b>在生成前显式拒绝</b>
+ * 并说明口径原因 —— 交给 LLM 自由发挥，很可能收到一个「看着正常、其实偏大」的 SUM。
  */
 @Component
 public class RewriteStep implements AgentStep {
@@ -41,6 +46,30 @@ public class RewriteStep implements AgentStep {
     /** 追问的长度上限：超过这个长度就当作完整问题，不做补全 */
     private static final int FOLLOW_UP_MAX_CHARS = 12;
 
+    /**
+     * 去重人数类指标（metric_type = uv）：跨天不可加。
+     * 词表对齐 {@code deploy/seed.sql} 的 metric_def —— {@code paid_user_cnt}「支付用户数」
+     * 的别名是「付费用户数,成交用户数」，用户按别名提问同样要拦。
+     */
+    private static final List<String> UNIQUE_COUNT_METRICS = List.of(
+            "支付用户数", "付费用户数", "成交用户数",
+            "支付用户", "付费用户", "支付人数", "付费人数",
+            "下单用户数", "活跃用户数");
+
+    /**
+     * 跨期口径词：出现这些词说明用户要的是「多天合成一个数」。
+     *
+     * <p>「总」刻意<b>不</b>单独列入 ——「支付用户数占总订单数的比例」里的「总」是分母修饰，
+     * 不是跨期求和，列进去会把正常的占比题也拦掉。
+     */
+    private static final Pattern CROSS_PERIOD = Pattern.compile(
+            "累计|总共|一共|合计|总计"
+                    + "|(近|最近|过去)\\s*\\d*\\s*(天|日|周|个?月)"
+                    + "|近一(周|个?月)|这(一)?(周|个?月)|本(周|月)|上一?(周|个?月)");
+
+    /** 按天问 = 合法：每天各自去重，不产生「累计」值 */
+    private static final Pattern PER_DAY = Pattern.compile("每天|每日|每一天|按天|逐日|分天|各天|趋势");
+
     private final SessionStore sessions;
 
     public RewriteStep(SessionStore sessions) {
@@ -55,6 +84,14 @@ public class RewriteStep implements AgentStep {
     @Override
     public AgentContext execute(AgentContext ctx) {
         String question = ctx.getUserQuestion() == null ? "" : ctx.getUserQuestion().trim();
+
+        // ⓪ 口径边界（Ticket 17 / C5②）：必须在生成前拒绝，且与有没有上一轮无关
+        String unsupported = unsupportedScope(question);
+        if (unsupported != null) {
+            ctx.reject(unsupported, "rewrite");
+            return ctx;
+        }
+
         SessionStore.Round last = sessions.last(ctx.getSessionId());
         if (last == null) {
             ctx.setRewrittenQuestion(question);
@@ -108,6 +145,28 @@ public class RewriteStep implements AgentStep {
                 + "「" + question + "」这类换了维度/时间的追问请把条件说全，例如「10月19日各渠道的GMV是多少」",
                 "rewrite");
         return ctx;
+    }
+
+    /**
+     * 口径边界：返回「不支持的说明」或 null（支持）。
+     *
+     * <p>三条判据同时成立才拒绝：① 问的是去重人数类指标；② 带跨期口径词；
+     * ③ 不是「按天看」的问法。缺任何一条都不该拦 —— 尤其 ③，
+     * 「近 7 天<b>每天</b>的支付用户数」是合法的（每天各自去重）。
+     *
+     * <p>拒绝文案要能被用户直接照着改问，所以给了两条可执行的替代问法，
+     * 而不是像兜底路径那样只说「换个问法」—— 后者下一轮换个说法很可能正好命中 SUM。
+     */
+    private String unsupportedScope(String question) {
+        String metric = UNIQUE_COUNT_METRICS.stream().filter(question::contains).findFirst().orElse(null);
+        if (metric == null || PER_DAY.matcher(question).find() || !CROSS_PERIOD.matcher(question).find()) {
+            return null;
+        }
+        return "「" + metric + "」是当天去重人数（uv），跨天相加会把同一个人重复计入 —— "
+                + "N 天累计支付用户数 ≠ N 天各自支付用户数之和。当前 ADS 层没有用户明细，"
+                + "无法重算 COUNT(DISTINCT user_id)，所以这类跨期累计的算法暂不支持，也不会给一个偏大的数。"
+                + "可以改问：①「近 7 天每天的支付用户数」（按天看趋势）；"
+                + "②「近 7 天支付订单数」或「近 7 天支付 GMV」（这几个可以累加）。";
     }
 
     /**

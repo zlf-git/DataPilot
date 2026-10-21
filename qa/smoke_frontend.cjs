@@ -423,6 +423,12 @@ async function textOf(page, selector) {
   // 正向保存一条（QA-13 P3-7 指出此前只测了渲染与负向）：
   // 打开 gmv_total 的编辑框直接保存 —— 值一个都不改，因此不会污染口径，
   // 但会真的走一遍 PUT /api/metrics，把「编辑保存」这条路径纳入回归网。
+  //
+  // 急停态（Ticket 14 的 write-enabled=false）下这条 PUT 会被 403 挡在门口，
+  // 「已保存」永远不会出现。QA-14 P2-1 就是这里栽的：这段是 9931743 加的，
+  // 当时没跟上面的负向用例一样分 writeEnabled 分支，于是急停态下 20s 超时、
+  // 整个脚本以「冒烟脚本异常」退出 —— 「急停态 29/29」从那一刻起就不可复现了。
+  // 两种态都断言，才能让这条回归网在两个实例上都有意义。
   await page.evaluate(() => {
     const row = [...document.querySelectorAll('.ant-table-row')].find((r) => r.innerText.includes('gmv_total'))
     if (row) {
@@ -432,9 +438,21 @@ async function textOf(page, selector) {
   })
   await waitText(page, '编辑指标', 20000)
   await clickButton(page, '保存')
-  await waitText(page, '已保存，白名单缓存会立即刷新', 20000)
-  check('指标页：编辑后保存走通（PUT /api/metrics 正向路径）',
-    (await bodyText(page)).includes('已保存，白名单缓存会立即刷新'))
+  if (writeEnabled) {
+    await waitText(page, '已保存，白名单缓存会立即刷新', 20000)
+    check('指标页：编辑后保存走通（PUT /api/metrics 正向路径）',
+      (await bodyText(page)).includes('已保存，白名单缓存会立即刷新'))
+  } else {
+    // 急停优先于角色：admin 已设凭证，保存照样 403，且文案必须是「急停」不是「权限不足」
+    await waitText(page, '写入已被运维急停', 20000)
+    const stopText = await bodyText(page)
+    check('指标页：急停态编辑保存被 403 拦下（正向路径同样不留口子）',
+      stopText.includes('写入已被运维急停'))
+    check('指标页：急停态保存失败后弹窗保持打开（不是静默关掉假装成功）',
+      stopText.includes('编辑指标'))
+    await clickButton(page, '取消')
+    await new Promise((r) => setTimeout(r, 500))
+  }
 
   // ---- 5. 元数据 / 白名单页 ----
   await clickNav(page, '元数据')

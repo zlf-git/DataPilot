@@ -20,3 +20,7 @@ Thumbs.db
 # 本地配置（含密钥的勿提交）
 application-local.yml
 .env
+
+# Python 字节码（qa/ 下的验收脚本会生成）
+__pycache__/
+*.pyc

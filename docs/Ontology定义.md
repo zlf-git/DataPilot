@@ -170,7 +170,9 @@
 | `sale_amount_product` 商品销售额 | **含未支付明细** | 来源 `ads_product_sales_rank_di.sale_amount` 是全量明细求和，退款/未支付分支可能仍在里面。它和 `gmv_total`（成交口径）不是同一件事，同名混用会让「商品销售额之和」与「总 GMV」对不上 | 答商品销售额时明确「含未支付」，不接受「商品销售额占比 = 该商品销售额 / 总GMV」这类跨口径比值 |
 | `paid_user_cnt` 支付用户数 | **跨期不可加** | `metric_type=uv`，是当天去重人数。`SUM` 多天会把同一个人重复计数（7 天累计支付用户 ≠ 7 天各自支付用户之和） | 「近 7 天支付用户数」只能答「按天趋势 / 取某一天」，不能直接给一个 SUM 出来的累计值；需要累计时必须重算 `COUNT(DISTINCT user_id)`（当前 ADS 层没有用户明细，因此**不支持**，要显式拒绝而不是给个偏大的数） |
 
-> 落地位置：`deploy/seed.sql` 第 3 节指标口径的注释与 `field_metadata` 的 `field_comment` 都已写明；口径改动只改这两处，代码不用动。
+> 落地位置分两件事，别混（QA-16 P2-1 就是混在这里）：
+> - **口径说明本身**（表格里这两句）：`deploy/seed.sql` 第 3 节指标口径的注释与 `field_metadata` 的 `field_comment`。改口径只改这两处，**不用动代码**。
+> - **C5② 的「显式拒绝」**：由 `agent/step/RewriteStep#unsupportedScope` 在生成 IR 之前判定（Ticket 17 落地），拒绝文案带口径原因与两条可执行替代问法。**这一处要改代码** —— 新增去重人数类指标或补别名时，必须同步 `UNIQUE_COUNT_METRICS` 词表，否则用户按新别名问「近 N 天累计」会退回「无法识别查询意图」。
 
 ---
 
