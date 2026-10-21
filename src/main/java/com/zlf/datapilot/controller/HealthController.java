@@ -1,5 +1,7 @@
 package com.zlf.datapilot.controller;
 
+import com.zlf.datapilot.agent.trace.SpanType;
+import com.zlf.datapilot.agent.trace.TraceSpan;
 import com.zlf.datapilot.knowledge.EngineWhitelist;
 import com.zlf.datapilot.llm.LlmClient;
 import com.zlf.datapilot.llm.LlmDescriptor;
@@ -9,7 +11,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -64,6 +69,26 @@ public class HealthController {
         out.put("apiKeyConfigured", d.apiKeyConfigured());
         out.put("temperature", d.temperature());
         out.put("impl", client.getClass().getSimpleName());
+        return out;
+    }
+
+    /**
+     * 埋点目录自检（Ticket 09）：暴露「一次成功运行应产出多少 span」，
+     * 让 e2e 脚本读基线而不是写死数字 —— 加节点时这里自动跟着变，脚本不用改。
+     */
+    @GetMapping("/traces")
+    public Map<String, Object> traceHealth() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        List<Map<String, Object>> catalog = new ArrayList<>();
+        for (TraceSpan span : TraceSpan.values()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("stepName", span.code());
+            item.put("spanType", span.type().code());
+            catalog.add(item);
+        }
+        out.put("expectedSpansPerSuccess", TraceSpan.expectedPerSuccess());
+        out.put("spanCatalog", catalog);
+        out.put("spanTypes", Arrays.stream(SpanType.values()).map(SpanType::code).toList());
         return out;
     }
 }

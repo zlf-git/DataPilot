@@ -65,6 +65,17 @@
 
 ## 修订记录
 
+### v2.14（Ticket 09 AgentOps 埋点）
+
+- **全链路埋点落地**：9 个 span（`rewrite/recall/prompt/llm_generate/gate_ir/ir_to_sql/gate_sql/execute/gate_result`）写 `agent_step`，收尾写 `agent_run`；`GET /api/traces`、`GET /api/traces/{traceId}` 可查；`span_type` 补齐 `operation/llm/sql/gate/hitl`（`hitl` 给 12 预留）
+- **基线不写死**：`TraceSpan.values().length` 是唯一真源，`GET /api/health/traces` 暴露给 e2e，脚本读基线而非写死 8 —— 加节点只改枚举 + 引擎
+- **埋点写元数据库**（`JdbcTemplate`），不跟 `engine.type` 漂移：跟着执行引擎走的话，切 MySQL 时 trace 会写进订单库、切 StarRocks 又要拿只读账号写（直接失败）
+- **旁路三条硬约束**：写库异常吞掉只打 warn、span 内异常原样抛出（不破坏引擎原有的超时/服务异常分类）、先按列宽截断再插（`question/error 500`、`input/output 2000`）
+- **run 状态三态**：`REJECTED`（闸门拦下）与 `FAILED`（跑挂了）分开，判据从 `gateResults` 反查，不给 `AgentContext` 加新状态位
+- **票面偏差 3 处**：用「引擎内显式包一层」而非装饰器（引擎按具体类型注入 Step）；`step_name` 按实际执行单元命名（`validate` 拆成三阶段闸门）；`span_type` 不含 `vector`（Milvus 关闭时召回走关键词，不放永远不产出的值）
+- **本票暴露、挂 02**：跨表维度的拒绝发生在转换器而非闸门①（闸门只看全局字段白名单，不校验字段归属表），连带让这类运行记成 `FAILED` 而非 `REJECTED` → 追加验收项 2 写入 02 票面
+- 测试 **93/93**（新增 19）；`qa/verify_traces.py` **31 项全绿**；`run_eval` / `e2e_stub` / `verify_stub_ir` 全 PASS 零回归
+
 ### v2.13（QA-06c / QA-07 二审复核：06e 补丁 + 07c 记录）
 
 评审方在 `/tmp` 副本与隔离库 `qa_dp07` 里独立复验：06c 跑 15 组变异、07 真切 MySQL。结论 **两票均 PASS，0 P0 / 0 P1 代码缺陷**（06c 那条 P1「基线没处理完」已在 06d 修掉）。

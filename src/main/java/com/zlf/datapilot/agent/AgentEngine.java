@@ -7,6 +7,10 @@ import com.zlf.datapilot.agent.step.PromptBuildStep;
 import com.zlf.datapilot.agent.step.RecallStep;
 import com.zlf.datapilot.agent.step.RewriteStep;
 import com.zlf.datapilot.agent.step.SqlExecuteStep;
+import com.zlf.datapilot.agent.trace.RunStatus;
+import com.zlf.datapilot.agent.trace.TraceRecorder;
+import com.zlf.datapilot.agent.trace.TraceSpan;
+import com.zlf.datapilot.agent.trace.TraceStep;
 import com.zlf.datapilot.ir.QueryIr;
 import com.zlf.datapilot.llm.LlmClient;
 import com.zlf.datapilot.llm.LlmGeneration;
@@ -39,6 +43,7 @@ public class AgentEngine {
     private final GateChain gateChain;
     private final IrToSqlConverter irToSqlConverter;
     private final SqlExecuteStep sqlExecuteStep;
+    private final TraceRecorder traceRecorder;
 
     public AgentEngine(RewriteStep rewriteStep,
                        RecallStep recallStep,
@@ -46,7 +51,8 @@ public class AgentEngine {
                        LlmClient llmClient,
                        GateChain gateChain,
                        IrToSqlConverter irToSqlConverter,
-                       SqlExecuteStep sqlExecuteStep) {
+                       SqlExecuteStep sqlExecuteStep,
+                       TraceRecorder traceRecorder) {
         this.rewriteStep = rewriteStep;
         this.recallStep = recallStep;
         this.promptBuildStep = promptBuildStep;
@@ -54,16 +60,58 @@ public class AgentEngine {
         this.gateChain = gateChain;
         this.irToSqlConverter = irToSqlConverter;
         this.sqlExecuteStep = sqlExecuteStep;
+        this.traceRecorder = traceRecorder;
+    }
+
+    /** LLM span 的输出摘要：IR 形状比 IR 全文有用（全文进 input/output 会把 TEXT 列灌满） */
+    private String summarizeIr(QueryIr ir) {
+        if (ir == null) {
+            return "ir=null";
+        }
+        return "mode=" + ir.getSelectMode()
+                + " metrics=" + (ir.getMetrics() == null ? 0 : ir.getMetrics().size())
+                + " dims=" + (ir.getDimensions() == null ? 0 : ir.getDimensions().size())
+                + " filters=" + (ir.getFilters() == null ? 0 : ir.getFilters().size())
+                + " limit=" + ir.getLimit();
+    }
+
+    /** 闸门 span 的输出摘要：PASS / REJECT: 原因 */
+    private String summarizeGate(GateResult r) {
+        if (r == null) {
+            return null;
+        }
+        return r.isPass() ? (r.getWarning() == null ? "PASS" : "PASS(WARN): " + r.getWarning())
+                : "REJECT: " + r.getReason();
+    }
+
+    private static int len(String s) {
+        return s == null ? 0 : s.length();
     }
 
     /**
      * 执行一次问数。返回装满结果的 {@link AgentContext}，失败信息放 errorMessage，不向上抛异常。
+     *
+     * <p>Ticket 09 起全链路挂埋点：每个执行单元一个 span 写 {@code agent_step}，
+     * 收尾在 {@code finally} 里写一条 {@code agent_run} —— 用 finally 而不是在每个 return 前各写一次，
+     * 是因为本方法有 7 个提前返回点，漏一个就少一条运行记录，且这种漏通常到线上才发现。
      */
     public AgentContext run(String question, String sessionId) {
         AgentContext ctx = new AgentContext();
         ctx.setTraceId(UUID.randomUUID().toString().replace("-", ""));
         ctx.setSessionId(sessionId);
         ctx.setUserQuestion(question);
+
+        TraceStep trace = traceRecorder.open(ctx.getTraceId());
+        try {
+            return execute(ctx, trace);
+        } finally {
+            trace.finish(ctx, RunStatus.of(ctx));
+        }
+    }
+
+    /** 主链路本体：所有提前返回都走这里，埋点收尾统一在 {@link #run} 的 finally 里做。 */
+    private AgentContext execute(AgentContext ctx, TraceStep trace) {
+        String question = ctx.getUserQuestion();
 
         // ⓪ 空问题短路（QA-03 P1-1）：不让空白输入走到 LLM/prompt 匹配，
         // 否则桩会因 few-shot 正文落回 Q1、真模型会自由发挥，两种情况都产出「看着正常」的错数
@@ -73,14 +121,18 @@ public class AgentEngine {
         }
 
         // ① 改写（Ticket 01 透传）
-        rewriteStep.execute(ctx);
+        trace.span(TraceSpan.REWRITE, question,
+                () -> rewriteStep.execute(ctx), c -> "rewritten=" + c.getRewrittenQuestion());
         // ② 召回
-        recallStep.execute(ctx);
+        trace.span(TraceSpan.RECALL, null,
+                () -> recallStep.execute(ctx), c -> "tables=" + c.getRelatedTables());
         // ③ 拼 Prompt
-        promptBuildStep.execute(ctx);
+        trace.span(TraceSpan.PROMPT, null,
+                () -> promptBuildStep.execute(ctx), c -> "promptChars=" + len(c.getPrompt()));
 
         // ④ LLM 生成 IR（失败重试 1 次；超时/失败返回提示，不抛 500）
-        QueryIr ir = generateIr(ctx);
+        QueryIr ir = trace.span(TraceSpan.LLM_GENERATE, "question→IR", ctx::getTotalTokens,
+                () -> generateIr(ctx), this::summarizeIr);
         if (ir == null) {
             // generateIr 已按异常类型设置 errorMessage（超时 vs 服务异常）
             return ctx;
@@ -95,7 +147,8 @@ public class AgentEngine {
         }
 
         // ⑤ 闸门阶段1（IR 层）：①存在性 → ②权限 → ③代价
-        GateResult irGate = gateChain.runPhase(Gate.Phase.IR, ctx);
+        GateResult irGate = trace.span(TraceSpan.GATE_IR, "phase=IR",
+                () -> gateChain.runPhase(Gate.Phase.IR, ctx), this::summarizeGate);
         if (!irGate.isPass()) {
             ctx.setErrorMessage(irGate.getReason());
             return ctx;
@@ -103,7 +156,8 @@ public class AgentEngine {
 
         // ⑥ IR → SQL
         try {
-            SqlCommand cmd = irToSqlConverter.convert(ir);
+            SqlCommand cmd = trace.span(TraceSpan.IR_TO_SQL, "mode=" + ir.getSelectMode(),
+                    () -> irToSqlConverter.convert(ir), SqlCommand::sql);
             ctx.setSqlCommand(cmd);
             ctx.setGeneratedSql(cmd.sql());
         } catch (IllegalArgumentException e) {
@@ -112,20 +166,24 @@ public class AgentEngine {
         }
 
         // ⑦ 闸门阶段2（SQL 层）：④语法（JSqlParser 解析 + 表/字段二次比对）
-        GateResult sqlGate = gateChain.runPhase(Gate.Phase.SQL, ctx);
+        GateResult sqlGate = trace.span(TraceSpan.GATE_SQL, ctx.getGeneratedSql(),
+                () -> gateChain.runPhase(Gate.Phase.SQL, ctx), this::summarizeGate);
         if (!sqlGate.isPass()) {
             ctx.setErrorMessage(sqlGate.getReason());
             return ctx;
         }
 
         // ⑧ 执行
-        sqlExecuteStep.execute(ctx);
+        trace.span(TraceSpan.EXECUTE, ctx.getGeneratedSql(),
+                () -> sqlExecuteStep.execute(ctx), c -> c.getErrorMessage() != null
+                        ? "failed" : "rows=" + c.getQueryResult().size());
         if (ctx.getErrorMessage() != null) {
             return ctx;
         }
 
         // ⑨ 闸门阶段3（结果层）：⑤结果自检（空结果/超长包装，不拒绝）
-        GateResult resultGate = gateChain.runPhase(Gate.Phase.RESULT, ctx);
+        GateResult resultGate = trace.span(TraceSpan.GATE_RESULT, "rows=" + ctx.getQueryResult().size(),
+                () -> gateChain.runPhase(Gate.Phase.RESULT, ctx), this::summarizeGate);
         if (resultGate.getWarning() != null) {
             ctx.setAnswer(resultGate.getWarning());
         }
