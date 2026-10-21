@@ -1,0 +1,836 @@
+{
+  "schema_version": "1.0",
+  "ticket": "06b",
+  "generated_at": "2026-10-21T13:31:17+08:00",
+  "host": "http://127.0.0.1:18081",
+  "golden_set": {
+    "path": "eval\\golden_set.json",
+    "sha256": "6cfa7d9ee1c0b70a843baf309bdf84da6f9f0f0d9a3c4fc00019b115f5b8702d",
+    "generated_at": "2026-10-21T13:08:13+08:00",
+    "anchor": "2026-10-19",
+    "tolerance": 0.011
+  },
+  "code": {
+    "git_head": "fcf3665 QA-05 验收补记：8 条 P2 去向、5 项未覆盖的收口路由、票面三处偏差回填、数据自洽性基线",
+    "dirty_files": 2
+  },
+  "env": {
+    "health": {
+      "metricCount": 13,
+      "fieldCount": 28,
+      "gateConfigCount": 4
+    },
+    "whitelist_fields": 20
+  },
+  "metrics": {
+    "accuracy": 1.0,
+    "table_hit_rate": 1.0,
+    "field_hit_rate": 1.0,
+    "avg_latency_ms": 19.3,
+    "syntax_pass_rate": 1.0,
+    "gate_block_rate": 0.0,
+    "sql_shape_score": 1.0,
+    "window_probe_pass": true
+  },
+  "overall": "PASS",
+  "window_probe": {
+    "name": "probe_window3",
+    "expect": 157702.85,
+    "closed_interval_value": 223887.35,
+    "question": "近3天累计GMV是多少？",
+    "sql": "SELECT SUM(total_gmv) AS gmv_total FROM ads_trade_overview_di WHERE dt > ? AND dt <= ? LIMIT 1000",
+    "params": [
+      "2026-10-16",
+      "2026-10-19"
+    ],
+    "actual": 157702.85,
+    "pass": true,
+    "note": "命中半开区间语义"
+  },
+  "items": [
+    {
+      "no": 1,
+      "question": "10月19日当天的总GMV是多少？",
+      "difficulty": "easy",
+      "expect_type": "scalar",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "gmv_total"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_trade_overview_di"
+      ],
+      "actual_tables": [
+        "ads_trade_overview_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT SUM(total_gmv) AS gmv_total FROM ads_trade_overview_di WHERE dt = ? LIMIT 1000",
+      "params": [
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 50,
+      "trace_id": "79c6679154a64767951c1b6a07822bc5",
+      "answer": "",
+      "rows": [
+        {
+          "gmv_total": 53042.41
+        }
+      ]
+    },
+    {
+      "no": 2,
+      "question": "近7天累计支付订单数是多少？",
+      "difficulty": "easy",
+      "expect_type": "scalar",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "paid_order_cnt"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_trade_overview_di"
+      ],
+      "actual_tables": [
+        "ads_trade_overview_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": {
+        "days": 7,
+        "from": "2026-10-12",
+        "anchor": "2026-10-19"
+      },
+      "sql": "SELECT SUM(paid_order_cnt) AS paid_order_cnt FROM ads_trade_overview_di WHERE dt > ? AND dt <= ? LIMIT 1000",
+      "params": [
+        "2026-10-12",
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 15,
+      "trace_id": "672467a539d34298ad9ba786a43828f4",
+      "answer": "",
+      "rows": [
+        {
+          "paid_order_cnt": 69
+        }
+      ]
+    },
+    {
+      "no": 3,
+      "question": "10月19日小程序渠道的GMV是多少？",
+      "difficulty": "easy",
+      "expect_type": "scalar",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "gmv_channel"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_channel_conversion_di"
+      ],
+      "actual_tables": [
+        "ads_channel_conversion_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT SUM(gmv) AS gmv_channel FROM ads_channel_conversion_di WHERE dt = ? AND channel_name = ? LIMIT 1000",
+      "params": [
+        "2026-10-19",
+        "小程序"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 14,
+      "trace_id": "32e8df88ecbf46e2a2ebeae4d50c425a",
+      "answer": "",
+      "rows": [
+        {
+          "gmv_channel": 15604.97
+        }
+      ]
+    },
+    {
+      "no": 4,
+      "question": "华东地区有哪些省份？",
+      "difficulty": "easy",
+      "expect_type": "stringset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 3,
+      "actual_cols": [
+        "province_name"
+      ],
+      "expect_rows_n": 3,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_region_gmv_di"
+      ],
+      "actual_tables": [
+        "ads_region_gmv_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT DISTINCT province_name FROM ads_region_gmv_di WHERE region = ? ORDER BY province_name ASC LIMIT 1000",
+      "params": [
+        "华东"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 15,
+      "trace_id": "8591b5f5bce24c5595c154e09a3fe040",
+      "answer": "",
+      "rows": [
+        {
+          "province_name": "上海"
+        },
+        {
+          "province_name": "江苏"
+        },
+        {
+          "province_name": "浙江"
+        }
+      ]
+    },
+    {
+      "no": 5,
+      "question": "电脑外设类目下有哪些商品？",
+      "difficulty": "easy",
+      "expect_type": "stringset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 2,
+      "actual_cols": [
+        "product_name"
+      ],
+      "expect_rows_n": 2,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_product_sales_rank_di"
+      ],
+      "actual_tables": [
+        "ads_product_sales_rank_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT DISTINCT product_name FROM ads_product_sales_rank_di WHERE category_name = ? ORDER BY product_name ASC LIMIT 1000",
+      "params": [
+        "电脑外设"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 19,
+      "trace_id": "ed4a54e26b884b468959bd6afb55c44a",
+      "answer": "",
+      "rows": [
+        {
+          "product_name": "4K显示器"
+        },
+        {
+          "product_name": "机械键盘"
+        }
+      ]
+    },
+    {
+      "no": 6,
+      "question": "10月19日各渠道的支付转化率分别是多少？按转化率从高到低排序。",
+      "difficulty": "medium",
+      "expect_type": "rowset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 3,
+      "actual_cols": [
+        "channel_name",
+        "pay_conversion_rate"
+      ],
+      "expect_rows_n": 3,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_channel_conversion_di"
+      ],
+      "actual_tables": [
+        "ads_channel_conversion_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT channel_name, ROUND(SUM(paid_order_cnt) / NULLIF(SUM(visit_uv), 0), 4) AS pay_conversion_rate FROM ads_channel_conversion_di WHERE dt = ? GROUP BY channel_name ORDER BY pay_conversion_rate DESC, channel_name ASC LIMIT 1000",
+      "params": [
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 19,
+      "trace_id": "ca5750351c904621b66e044d8100901f",
+      "answer": "",
+      "rows": [
+        {
+          "channel_name": "APP",
+          "pay_conversion_rate": 0.1
+        },
+        {
+          "channel_name": "小程序",
+          "pay_conversion_rate": 0.1
+        },
+        {
+          "channel_name": "网页",
+          "pay_conversion_rate": 0.075
+        }
+      ]
+    },
+    {
+      "no": 7,
+      "question": "10月19日GMV最高的省份是哪个？",
+      "difficulty": "medium",
+      "expect_type": "rowset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "province_name",
+        "gmv_region"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_region_gmv_di"
+      ],
+      "actual_tables": [
+        "ads_region_gmv_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT province_name, SUM(gmv) AS gmv_region FROM ads_region_gmv_di WHERE dt = ? GROUP BY province_name ORDER BY gmv_region DESC, province_name ASC LIMIT 1",
+      "params": [
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 15,
+      "trace_id": "e354bbcba2674e22b0a83bf469b03dfc",
+      "answer": "",
+      "rows": [
+        {
+          "province_name": "上海",
+          "gmv_region": 15695.05
+        }
+      ]
+    },
+    {
+      "no": 8,
+      "question": "10月19日销量排名前三的商品是哪些？",
+      "difficulty": "medium",
+      "expect_type": "rowset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 3,
+      "actual_cols": [
+        "product_name",
+        "sale_cnt_product"
+      ],
+      "expect_rows_n": 3,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_product_sales_rank_di"
+      ],
+      "actual_tables": [
+        "ads_product_sales_rank_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT product_name, SUM(sale_cnt) AS sale_cnt_product FROM ads_product_sales_rank_di WHERE dt = ? GROUP BY product_name ORDER BY sale_cnt_product DESC, product_name ASC LIMIT 3",
+      "params": [
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 17,
+      "trace_id": "49c1f498633348d78a06c9e99626b97d",
+      "answer": "",
+      "rows": [
+        {
+          "product_name": "4K显示器",
+          "sale_cnt_product": 4
+        },
+        {
+          "product_name": "人体工学椅",
+          "sale_cnt_product": 3
+        },
+        {
+          "product_name": "机械键盘",
+          "sale_cnt_product": 3
+        }
+      ]
+    },
+    {
+      "no": 9,
+      "question": "10月19日支付订单数占总订单数的比例（支付率）是多少？",
+      "difficulty": "medium",
+      "expect_type": "scalar",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "pay_rate"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_trade_overview_di"
+      ],
+      "actual_tables": [
+        "ads_trade_overview_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT ROUND(SUM(paid_order_cnt) / NULLIF(SUM(total_order_cnt), 0), 4) AS pay_rate FROM ads_trade_overview_di WHERE dt = ? LIMIT 1000",
+      "params": [
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 15,
+      "trace_id": "cd4376d2fff94007b307bdbc44e9a6f4",
+      "answer": "",
+      "rows": [
+        {
+          "pay_rate": 0.9
+        }
+      ]
+    },
+    {
+      "no": 10,
+      "question": "10月19日华北地区的订单量是多少？",
+      "difficulty": "medium",
+      "expect_type": "scalar",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "order_cnt_region"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_region_gmv_di"
+      ],
+      "actual_tables": [
+        "ads_region_gmv_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT SUM(order_cnt) AS order_cnt_region FROM ads_region_gmv_di WHERE dt = ? AND region = ? LIMIT 1000",
+      "params": [
+        "2026-10-19",
+        "华北"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 13,
+      "trace_id": "15702691c22b4adfb97c2214f7632e2d",
+      "answer": "",
+      "rows": [
+        {
+          "order_cnt_region": 2
+        }
+      ]
+    },
+    {
+      "no": 11,
+      "question": "近7天GMV最高的渠道是哪个？",
+      "difficulty": "hard",
+      "expect_type": "rowset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "channel_name",
+        "gmv_channel"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_channel_conversion_di"
+      ],
+      "actual_tables": [
+        "ads_channel_conversion_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": {
+        "days": 7,
+        "from": "2026-10-12",
+        "anchor": "2026-10-19"
+      },
+      "sql": "SELECT channel_name, SUM(gmv) AS gmv_channel FROM ads_channel_conversion_di WHERE dt > ? AND dt <= ? GROUP BY channel_name ORDER BY gmv_channel DESC, channel_name ASC LIMIT 1",
+      "params": [
+        "2026-10-12",
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 15,
+      "trace_id": "8288c0e99fd84d20b89f980fbe36c533",
+      "answer": "",
+      "rows": [
+        {
+          "channel_name": "APP",
+          "gmv_channel": 138821.73
+        }
+      ]
+    },
+    {
+      "no": 12,
+      "question": "近7天GMV最高的大区是哪个？",
+      "difficulty": "hard",
+      "expect_type": "rowset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "region",
+        "gmv_region"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_region_gmv_di"
+      ],
+      "actual_tables": [
+        "ads_region_gmv_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": {
+        "days": 7,
+        "from": "2026-10-12",
+        "anchor": "2026-10-19"
+      },
+      "sql": "SELECT region, SUM(gmv) AS gmv_region FROM ads_region_gmv_di WHERE dt > ? AND dt <= ? GROUP BY region ORDER BY gmv_region DESC, region ASC LIMIT 1",
+      "params": [
+        "2026-10-12",
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 24,
+      "trace_id": "ebedbfb52a964ce695c2e68169686b0f",
+      "answer": "",
+      "rows": [
+        {
+          "region": "华东",
+          "gmv_region": 254466.85
+        }
+      ]
+    },
+    {
+      "no": 13,
+      "question": "近7天销售额最高的商品类目是哪个？金额多少？",
+      "difficulty": "hard",
+      "expect_type": "rowset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "category_name",
+        "sale_amount_product"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_product_sales_rank_di"
+      ],
+      "actual_tables": [
+        "ads_product_sales_rank_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": {
+        "days": 7,
+        "from": "2026-10-12",
+        "anchor": "2026-10-19"
+      },
+      "sql": "SELECT category_name, SUM(sale_amount) AS sale_amount_product FROM ads_product_sales_rank_di WHERE dt > ? AND dt <= ? GROUP BY category_name ORDER BY sale_amount_product DESC, category_name ASC LIMIT 1",
+      "params": [
+        "2026-10-12",
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 20,
+      "trace_id": "8a143d3ba3534b058c3981b1e2bf74d3",
+      "answer": "",
+      "rows": [
+        {
+          "category_name": "电脑外设",
+          "sale_amount_product": 293469.91
+        }
+      ]
+    },
+    {
+      "no": 14,
+      "question": "近7天里总GMV最高的是哪一天？",
+      "difficulty": "hard",
+      "expect_type": "rowset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 1,
+      "actual_cols": [
+        "dt",
+        "gmv_total"
+      ],
+      "expect_rows_n": 1,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_trade_overview_di"
+      ],
+      "actual_tables": [
+        "ads_trade_overview_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": {
+        "days": 7,
+        "from": "2026-10-12",
+        "anchor": "2026-10-19"
+      },
+      "sql": "SELECT dt, SUM(total_gmv) AS gmv_total FROM ads_trade_overview_di WHERE dt > ? AND dt <= ? GROUP BY dt ORDER BY gmv_total DESC, dt ASC LIMIT 1",
+      "params": [
+        "2026-10-12",
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 16,
+      "trace_id": "6cb7b38882204af58b8013a385d469c5",
+      "answer": "",
+      "rows": [
+        {
+          "dt": "2026-10-16",
+          "gmv_total": 66184.5
+        }
+      ]
+    },
+    {
+      "no": 15,
+      "question": "10月19日各渠道GMV占当天总GMV的比例分别是多少？",
+      "difficulty": "hard",
+      "expect_type": "rowset",
+      "pass": true,
+      "verdict": "PASS",
+      "reasons": [],
+      "actual_rows": 3,
+      "actual_cols": [
+        "channel_name",
+        "gmv_channel_ratio"
+      ],
+      "expect_rows_n": 3,
+      "table_hit": true,
+      "field_hit": true,
+      "expect_tables": [
+        "ads_channel_conversion_di",
+        "ads_trade_overview_di"
+      ],
+      "actual_tables": [
+        "ads_channel_conversion_di",
+        "ads_trade_overview_di"
+      ],
+      "field_diff": {
+        "missing": [],
+        "extra": []
+      },
+      "sql_must_miss": [],
+      "window": null,
+      "sql": "SELECT channel_name, ROUND(SUM(gmv) / NULLIF((SELECT SUM(total_gmv) FROM ads_trade_overview_di WHERE dt = ?), 0), 4) AS gmv_channel_ratio FROM ads_channel_conversion_di WHERE dt = ? GROUP BY channel_name ORDER BY gmv_channel_ratio DESC, channel_name ASC LIMIT 1000",
+      "params": [
+        "2026-10-19",
+        "2026-10-19"
+      ],
+      "gates": [
+        "存在性=PASS",
+        "权限=PASS",
+        "代价=PASS",
+        "语法=PASS",
+        "结果自检=PASS"
+      ],
+      "cost_ms": 22,
+      "trace_id": "656837d342a8455a88441ba2a785cf82",
+      "answer": "",
+      "rows": [
+        {
+          "channel_name": "APP",
+          "gmv_channel_ratio": 0.3832
+        },
+        {
+          "channel_name": "网页",
+          "gmv_channel_ratio": 0.3226
+        },
+        {
+          "channel_name": "小程序",
+          "gmv_channel_ratio": 0.2942
+        }
+      ]
+    }
+  ]
+}

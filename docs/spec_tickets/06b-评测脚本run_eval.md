@@ -36,3 +36,58 @@ Ticket 06a
 
 ## 不包含
 - 真 LLM 评测（需 Key）
+
+---
+
+## 落地记录（2026-10-21）
+
+**新增资产**
+
+| 文件 | 说明 |
+|---|---|
+| `eval/run_eval.py` | 读 `golden_set.json` → 逐题打 `/api/ask` → 按 `expect_type` 对拍 → 六层指标 + 逐题 verdict → 落 `result.json`（含 golden_set sha256 + 被测 commit + 未提交改动数） |
+| `eval/result.json` | 本轮基线产物（stub，18081），供「哪个真源测的哪版代码」回溯；每次跑覆盖 |
+
+**对拍实现要点**
+1. **rowset 一律集合比对**：行数一致 + 逐行匹配（用「已匹配行出队」的方式保证多重集语义），**不按行序**。行内比法分两档——实际列名集合与 `expect_cols` 一致时按列名比；不一致（生成器用 metricId 做别名，Q2 输出 `paid_order_cnt` 而标准 SQL 是 `total_paid`）时按**行内值多重集**比。列数用 `len(expect_cols)` 校验，列名不比。
+2. **窗口题硬断言 SQL 形状**（5 题：Q2/Q11~Q14）：禁 `BETWEEN`、必须同时含 `dt > ?` 与 `dt <= ?`、参数必须含 from/anchor 且不含第三个值。`probe_window3` 单列回归项（期望 157702.85，若得 223887.35 直接点名「多吃了一天」），不计入 15 题准确率但 FAIL 即整体 FAIL。
+3. **`sql_must` 只做软检查**：逐条子串命中算进 `sql_shape_score` 并在逐题里列 `sql_must_miss`，不判 FAIL——票面明确「标准 SQL 与生成器结果一致即可，写法可不同」，硬判会误杀等价写法（窗口形状断言不受此豁免）。
+4. **题数护栏**：`--expect-total`（默认 15），golden_set 少题直接 `SystemExit`，防止「删掉难题就全绿」。
+5. **绕过环境代理**：`build_opener(ProxyHandler({}))`。实测本机 `HTTP_PROXY` 会把 19999 的「连接被拒」伪装成 `502 upstream connect failed`，导致「服务没起」误报成「网关故障」。
+
+**六层指标定义（写清口径，避免以后各说各话）**
+
+| 指标 | 定义 | 本轮实测 |
+|---|---|---|
+| 准确率 | pass / 15 | 15/15 = 100% |
+| 表命中率 | 实际 SQL 引用的表集合 == 标准 SQL 的表集合 | 15/15 = 100% |
+| 字段命中率 | 两侧引用的**白名单物理字段**集合相等（抹掉 SELECT 的 `AS` 别名，只在 `ORDER BY/GROUP BY/HAVING` 段抹别名复用） | 15/15 = 100% |
+| 平均延迟 | `/api/ask` 的 `costMs` 均值 | 19.3 ms（stub） |
+| 语法通过率 | sql 非空 + 无拒绝文案（语法闸门未 REJECT 且执行出结果） | 15/15 = 100% |
+| 闸门拦截率 | 任一闸门 REJECT 的题数占比（golden_set 全是有答案的题，正常 0） | 0/15 = 0% |
+
+`字段命中率` 的抹别名规则踩了两次坑，值得记：① 不抹别名 → Q11/Q12 标准 SQL 的 `SUM(gmv) AS total_gmv` 里 `total_gmv` 是另一张表的真实字段，误判 13/15；② 全文抹别名 → Q2/Q10 的 `SUM(paid_order_cnt) AS paid_order_cnt` 别名与自身字段同名，真引用被一起吃掉，仍 13/15。分两步（SELECT 段抹声明、排序段抹复用）后两侧同规则才对。
+
+**验收（18081，provider=stub，StarRocks 3.3.8-e3816ec，锚点 2026-10-19）**
+- `python eval/run_eval.py --host http://127.0.0.1:18081` → **PASS**：15/15 全绿，六层指标见上表，`sql_shape_score 49/49`，窗口探针 PASS（157702.85）。
+- `result.json` 归档字段齐全：`golden_set.sha256=6cfa7d9ee1c0…`、`generated_at=2026-10-21T13:08:13+08:00`、`code.git_head`、`code.dirty_files`、`env.health={13,28,4}`。
+- 逐题行内比法：Q6/Q8 走「按列名」（别名恰与 expect_cols 同名），Q7/Q11~Q15 走「按值多重集」，Q1/Q2/Q3/Q9/Q10 为 scalar。
+
+**变异测试（临时脚本，未入仓）8/8 符合预期**
+
+| 用例 | 期望 | 实际 |
+|---|---|---|
+| 基线 | exit 0 / PASS | exit 0 / PASS |
+| Q1 期望值改 1.0 | FAIL value_mismatch | 一致 |
+| Q8 期望行序反转 | 仍 PASS（不按行序判） | 一致 |
+| Q8 期望少一行 | FAIL row_count_mismatch | 一致 |
+| Q6 类型 rowset→scalar | FAIL row_count_mismatch | 一致 |
+| `BETWEEN` + 缺半开形状（直调 `window_issues`） | 检出 3 条；合规 SQL 0 条 | 一致 |
+| 删掉 Q15 | exit 1 拒绝出结论 | 一致 |
+| host 不可达 | exit 1 | 一致 |
+
+**已知遗留**
+- `表命中率`/`字段命中率` 是**文本级**代理指标，不是「语义命中」：字段命中率只比字段集合，不比聚合函数与过滤值（值对拍已覆盖）。三处口径写在脚本 docstring，后续若改判定口径需同步改这里。
+- 真 LLM 未评（本票仍 stub）。`provider=deepseek` 时同一脚本直接可跑，只换 `--host`。
+- 白名单 `/api/metadata/fields` 返回 28 行、20 个唯一字段名（跨表同名字段重复），去重后才做集合比对。
+- 平均延迟 19.3 ms 是 stub + 本机 StarRocks 的数字，不代表真 LLM 链路，简历引用必须注明口径。

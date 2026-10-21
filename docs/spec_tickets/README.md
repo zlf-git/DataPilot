@@ -65,6 +65,14 @@
 
 ## 修订记录
 
+### v2.7（Ticket 06a/06b 落地 + QA-05 收口）
+
+- **评测真源与执行器分层**：`eval/golden_set.json`（06a，机读真源，`expect_rows` 全部实跑非手抄）→ `eval/run_eval.py`（06b，对拍 + 六层指标）→ `eval/result.json`（含 golden_set sha256 + 被测 commit，成对归档）。`qa/eval_expectations.json` 继续服务 `qa/e2e_stub.py`（带 status/blocker/QA 语义），两者分工不再混用
+- **判定硬规则增补**：rowset 一律集合比对（Q8 两轮采样到过并列行序翻转，按位置比会误判）；窗口题必须断言 SQL 形状且 `probe_window3` 单列回归；`sql_must` 只做软检查（写法等价不算错）；`--expect-total=15` 防「删题提分」
+- **05 票面三处回填**（验收时与实际落地不符）：`pay_conversion_rate` 分母 `order_cnt` → `visit_uv`；分母子查询不加 `mall_dw.` 前缀；复合列别名 `AS <metricId>` 而非 `AS ratio`
+- **QA-05 八条 P2**：6 条已在 05c 收口（空结果提示真正生效 + 单行全 null 也判无数据、ratio 归因、代价闸门含分母表、seed 用 `ON DUPLICATE KEY UPDATE` 收敛、迁移去硬编码库名、写入口径契约统一）；P2-5 归 Ticket 15、P2-8 归 Ticket 16；U1~U5 五项「测不出来」的收口路由已写进 QA-05 §8.2
+- **数据口径基线**：锚点日三表 GMV 合计同为 53042.41（渠道/地域/概览自洽）；`ads_product_sales_rank_di` 是每日 TOP-3 排行（21 行），不可用来核总账
+
 ### v2.6（QA-04 报告收口，04b 补丁）
 
 - **评测硬规则**：窗口题**必须**断言 SQL 形状（禁 `BETWEEN`、必须含 `dt > ?` 与 `dt <= ?`、参数 == `[anchor-days, anchor]`）。原因：7 天窗口下界 2026-10-12 是空分区，闭区间（8 天）与半开（7 天）逐题返回值相同，只做行级对拍判不出来
