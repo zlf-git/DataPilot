@@ -193,6 +193,46 @@ export default function AskPage() {
                 {result.answer}
               </Paragraph>
             )}
+
+            {/*
+              Ticket 21：有图必须有结论。
+              findings 是「这些数说明了什么」，gaps 是「问题要求了但这次取数覆盖不到的部分」。
+              两者分开渲染：结论用普通列表，缺口用告警色 —— 缺口不代表失败（SQL 跑通了、数字是真的），
+              但必须让人一眼看出这份答案是完整的还是残缺的，而不是默默给一张图让人以为答完了。
+            */}
+            {(result.analysis?.findings?.length > 0 || result.analysis?.gaps?.length > 0) && (
+              <Card
+                size="small"
+                type="inner"
+                title="分析"
+                style={{ marginBottom: 8 }}
+                styles={{ body: { paddingTop: 8, paddingBottom: 8 } }}
+              >
+                {result.analysis.findings?.length > 0 && (
+                  <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: '22px' }}>
+                    {result.analysis.findings.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ol>
+                )}
+                {result.analysis.gaps?.length > 0 && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginTop: result.analysis.findings?.length > 0 ? 10 : 0 }}
+                    message="以下部分本次答不了"
+                    description={
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+                        {result.analysis.gaps.map((g) => (
+                          <li key={g}>{g}</li>
+                        ))}
+                      </ul>
+                    }
+                  />
+                )}
+              </Card>
+            )}
+
             {result.comparisonNote && (
               <Alert type="info" showIcon style={{ marginBottom: 8 }} message={result.comparisonNote} />
             )}

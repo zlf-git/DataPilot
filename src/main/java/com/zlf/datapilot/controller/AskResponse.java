@@ -1,5 +1,6 @@
 package com.zlf.datapilot.controller;
 
+import com.zlf.datapilot.agent.analysis.Analysis;
 import com.zlf.datapilot.ir.QueryIr;
 
 import java.util.List;
@@ -35,6 +36,16 @@ public class AskResponse {
     private String answer;
     private String chartType;
     private String reportHtml;
+
+    /**
+     * 结果分析（Ticket 21）：{@code findings} 是「这些数说明了什么」，{@code gaps} 是
+     * 「问题要求了但这次取数覆盖不到的部分」。
+     *
+     * <p>为什么和 {@code answer} 并存：{@code answer} 只描述结果形状（「共 N 行」），
+     * 有图没结论的场景里它一个字的信息量都没有。{@code gaps} 非空也<b>不代表失败</b> ——
+     * SQL 跑通了、数字是真的，只是问题的某几个分句在当前取数下无解，得明说。
+     */
+    private Analysis analysis;
 
     /**
      * 改写后的问题（Ticket 10）：多轮追问补全后的样子。
@@ -192,6 +203,14 @@ public class AskResponse {
 
     public void setReportHtml(String reportHtml) {
         this.reportHtml = reportHtml;
+    }
+
+    public Analysis getAnalysis() {
+        return analysis;
+    }
+
+    public void setAnalysis(Analysis analysis) {
+        this.analysis = analysis;
     }
 
     public String getRewrittenQuestion() {

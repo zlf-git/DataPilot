@@ -1,6 +1,7 @@
 package com.zlf.datapilot.agent.step;
 
 import com.zlf.datapilot.agent.AgentContext;
+import com.zlf.datapilot.agent.analysis.ResultAnalyzer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -16,10 +17,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>「不覆盖」这条是关键：结果自检的「无数据」和环比的「前 7 天无数据」都写在 answer 里，
  * 解释节点如果再写一句「共 0 行」，用户拿到的就是不完整的结论。
+ *
+ * <p>Ticket 21 起这个节点还产出 {@code ctx.analysis}（结论 + 缺口），分析自身的算法细节
+ * 由 {@code ResultAnalyzerTest} 覆盖，这里只验「接上了、且不影响 answer 的既有约定」。
  */
 class ExplainStepTest {
 
-    private final ExplainStep step = new ExplainStep();
+    private final ExplainStep step = new ExplainStep(new ResultAnalyzer());
 
     private static AgentContext ctx(List<Map<String, Object>> rows) {
         AgentContext c = new AgentContext();
@@ -117,5 +121,28 @@ class ExplainStepTest {
 
         assertThat(c.getAnswer()).startsWith("共 7 行").contains("n1=1").contains("等");
         assertThat(c.getAnswer()).doesNotContain("n6=");
+    }
+
+    @Test
+    @DisplayName("Ticket 21：有图必须有结论 —— analysis 被写入，且不改动 answer")
+    void analysisIsFilledWithoutTouchingAnswer() {
+        AgentContext c = ctx(List.of(
+                row("category_name", "电脑外设", "sale_cnt_product", 58),
+                row("category_name", "办公家具", "sale_cnt_product", 34)));
+        step.execute(c);
+
+        // answer 仍是 Ticket 11 的「共 N 行」，分析另走一条通道
+        assertThat(c.getAnswer()).startsWith("共 2 行");
+        assertThat(c.getAnalysis().findings()).isNotEmpty();
+        assertThat(c.getAnalysis().findings().toString()).contains("63.0%");
+    }
+
+    @Test
+    @DisplayName("Ticket 21：空结果时分析为空（前端不渲染分析区），不会给出「合计 0」这种假结论")
+    void emptyRowsProducesEmptyAnalysis() {
+        AgentContext c = ctx(new ArrayList<>());
+        step.execute(c);
+
+        assertThat(c.getAnalysis().isEmpty()).isTrue();
     }
 }

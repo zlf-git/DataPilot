@@ -58,6 +58,9 @@ public class AskController {
         // 解释与报告由 Ticket 11 的节点产出（此前是 "table"/"" 的占位）
         r.setChartType(ctx.getChartType());
         r.setReportHtml(ctx.getReportHtml());
+        // 结果分析（Ticket 21）：结论 + 缺口。和 answer 并存 —— answer 说「取回了什么」，
+        // analysis 说「这些数说明了什么、哪些问不了」。空分析不是 null，前端据 isEmpty 决定渲不渲染
+        r.setAnalysis(ctx.getAnalysis());
         // 多轮（Ticket 10）：补全后的问题与环比结论一起回显，
         // 否则「那环比呢」这类追问在响应体里看不出系统理解成了什么
         r.setRewrittenQuestion(ctx.getRewrittenQuestion());

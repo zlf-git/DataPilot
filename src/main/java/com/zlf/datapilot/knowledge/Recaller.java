@@ -103,7 +103,7 @@ public class Recaller {
         List<MetricDef> metrics = repo.listMetrics().stream()
                 .filter(m -> metricHit(m, q, ql))
                 .collect(Collectors.toList());
-        result.setMetrics(metrics);
+        result.setMetrics(withSiblingMetrics(metrics));
 
         // 表命中：表名或表注释出现在问题里
         for (SemanticModel t : repo.listTables()) {
@@ -113,6 +113,43 @@ public class Recaller {
             }
         }
         return hitTables;
+    }
+
+    /**
+     * 同表补全（Ticket 21）：命中的指标所在表，把该表剩余指标一并召回。
+     *
+     * <p>动机来自一次实测：问「各品类<b>销量</b>占比与<b>金额</b>占比是否匹配」，
+     * 字面只命中「商品销量」（sales_cnt），而同表的「商品销售额」（sale_amount_product）
+     * 因为问题里没有出现「销售额」三个字而没被召回 —— 模型在 prompt 里根本看不到它，
+     * 只能拿一个指标硬答，最后不得不回一句「取不到金额」。
+     *
+     * <p>表既然已经召回，表上的指标就都该是候选：一个量值问题通常需要同表的分子分母同时在场，
+     * 字面匹配注定漏掉「口语说法 ≠ 指标名」的那些。补全的代价只是 prompt 长一点，
+     * 漏召回的代价是答错或答不了。
+     */
+    private List<MetricDef> withSiblingMetrics(List<MetricDef> hit) {
+        if (hit.isEmpty()) {
+            return hit;
+        }
+        Set<String> tables = hit.stream()
+                .map(MetricDef::getTableName)
+                .filter(t -> t != null && !t.isBlank())
+                .collect(Collectors.toSet());
+        if (tables.isEmpty()) {
+            return hit;
+        }
+        Set<String> seen = hit.stream()
+                .map(MetricDef::getMetricId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(HashSet::new));
+        List<MetricDef> out = new ArrayList<>(hit);
+        for (MetricDef m : repo.listMetrics()) {
+            if (m.getTableName() != null && tables.contains(m.getTableName())
+                    && m.getMetricId() != null && seen.add(m.getMetricId())) {
+                out.add(m);
+            }
+        }
+        return out;
     }
 
     /** 指标命中判定：指标名精确包含，或同义词（逗号分隔）任一命中 */

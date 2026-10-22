@@ -1,5 +1,6 @@
 package com.zlf.datapilot.agent;
 
+import com.zlf.datapilot.agent.analysis.Analysis;
 import com.zlf.datapilot.agent.trace.RunStatus;
 import com.zlf.datapilot.ir.QueryIr;
 import com.zlf.datapilot.knowledge.model.RecalledMetadata;
@@ -66,6 +67,15 @@ public class AgentContext {
 
     /** 最终给用户的自然语言解释 */
     private String answer;
+
+    /**
+     * 结果分析（Ticket 21）：结论 + 缺口。{@code answer} 是「一句话摘要」，
+     * 这里是「几句结论」，两者不互相替代 —— 摘要说「共 N 行」，分析说「谁占多少、谁比均值高」。
+     *
+     * <p><b>写入方唯一</b>：{@code ExplainStep}。初值 {@link Analysis#EMPTY} 而非 null，
+     * 前端据此判断「这次没有分析可渲染」，不用 null 检查。
+     */
+    private Analysis analysis = Analysis.EMPTY;
 
     /**
      * 建议的图表类型：metric/bar/line/table。<b>初值 null</b>（QA-11 P2-2）。
@@ -292,6 +302,14 @@ public class AgentContext {
 
     public void setChartType(String chartType) {
         this.chartType = chartType;
+    }
+
+    public Analysis getAnalysis() {
+        return analysis;
+    }
+
+    public void setAnalysis(Analysis analysis) {
+        this.analysis = analysis == null ? Analysis.EMPTY : analysis;
     }
 
     public String getReportHtml() {

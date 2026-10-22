@@ -2,13 +2,15 @@ package com.zlf.datapilot.agent.step;
 
 import com.zlf.datapilot.agent.AgentContext;
 import com.zlf.datapilot.agent.AgentStep;
+import com.zlf.datapilot.agent.analysis.Analysis;
+import com.zlf.datapilot.agent.analysis.ResultAnalyzer;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * ⑥ 解释节点（Ticket 11）：把结果说成一句人话，并按结果形状定图表类型。
+ * ⑥ 解释节点（Ticket 11 / 21）：把结果说成一句人话，按结果形状定图表类型，并产出分析结论。
  *
  * <p>这里是<b>模板生成</b>而不是再调一次 LLM：同一份 rows 让模型自由发挥，
  * 就有机会说出「GMV 环比增长 12%」这种数据里没有的结论（幻觉最贵的一种）。
@@ -16,12 +18,22 @@ import java.util.Map;
  *
  * <p>答案优先级：结果自检的「无数据」/环比的补充结论已经在 ctx 里，<b>不能覆盖</b>；
  * 只有在 answer 还空着时才补一句。图表类型则每轮都重算（空结果同样要有个合理形状）。
+ *
+ * <p>Ticket 21 起多一件活：{@link ResultAnalyzer} 把 rows 算成「结论 + 缺口」。
+ * 它和 {@code answer} <b>并存</b>而不是替代 —— answer 回答「这次取回了什么」，
+ * analysis 回答「这些数说明了什么、以及哪些问不了」。有图没结论正是 Ticket 21 要补的洞。
  */
 @Component
 public class ExplainStep implements AgentStep {
 
     /** 结果行数上限：再多也是「共 N 行」，不必逐行念 */
     private static final int MAX_LISTED_ROWS = 5;
+
+    private final ResultAnalyzer resultAnalyzer;
+
+    public ExplainStep(ResultAnalyzer resultAnalyzer) {
+        this.resultAnalyzer = resultAnalyzer;
+    }
 
     @Override
     public String name() {
@@ -35,6 +47,13 @@ public class ExplainStep implements AgentStep {
         if (ctx.getAnswer() == null || ctx.getAnswer().isBlank()) {
             ctx.setAnswer(describe(rows));
         }
+        // 分析独立于 answer：即使 answer 已被结果自检/环比填过，结论与缺口照样要算。
+        // 指标中文名从召回的 metric_def 里取，取不到就显示 metricId，不猜语义。
+        ctx.setAnalysis(resultAnalyzer.analyze(
+                rows,
+                ctx.getIr(),
+                ctx.getRecalledMetadata() == null ? null : ctx.getRecalledMetadata().getMetrics(),
+                ctx.getUserQuestion()));
         return ctx;
     }
 
