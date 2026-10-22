@@ -46,7 +46,12 @@ function check(name, ok, detail) {
   checks.push({ name, ok: !!ok, detail })
   if (!ok) failed++
   const mark = ok ? 'PASS' : 'FAIL'
-  console.log(`[${mark}] ${name}${detail ? ' :: ' + detail : ''}`)
+  // detail 可能是对象（例如报告渲染的结构快照）：非字符串一律 JSON 化，
+  // 否则打出来是 [object Object]，失败时完全看不出取到了什么
+  const text = detail === undefined || detail === null || detail === ''
+    ? ''
+    : ' :: ' + (typeof detail === 'string' ? detail : JSON.stringify(detail))
+  console.log(`[${mark}] ${name}${text}`)
 }
 
 function fail(msg) {
@@ -201,7 +206,9 @@ async function textOf(page, selector) {
   if (!executablePath) fail('没找到 Chrome/Edge，可用 CHROME_PATH 指定')
 
   const server = http.createServer((req, res) => {
-    if (req.url.startsWith('/api')) proxy(req, res)
+    // /report-assets 是问数报告的图表库（Ticket 18 本地化后由后端提供）。
+    // 不代理这一条，报告 iframe 里的 echarts 会打到本静态服务 → 取到 index.html → 图空白。
+    if (req.url.startsWith('/api') || req.url.startsWith('/report-assets')) proxy(req, res)
     else serveStatic(req, res)
   })
   await new Promise((r) => server.listen(PORT, '127.0.0.1', r))
@@ -278,6 +285,40 @@ async function textOf(page, selector) {
     return f ? f.srcdoc : ''
   })
   check('报告：iframe 里是完整 HTML（含 echarts 与 <table>）', /echarts/.test(reportHtml) && /<table>/i.test(reportHtml), `${reportHtml.length} chars`)
+
+  // Ticket 18：判据从「字符串里有 echarts」升级成「浏览器里真的画出来了」。
+  // 旧判据在 CDN 拿不到时照样全绿 —— 线上报告一直是一块空白图，就是这么漏过去的。
+  //
+  // 注意：page.frames() 里可能同时存在多个 about:srcdoc（上一轮被替换掉的报告 iframe
+  // 还没被 GC 掉，内容已空）。所以不能取第一个，要挑「真的有内容的那个」，
+  // 否则拿到空 frame 会误判成「报告没渲染」（第一版就踩了这个）。
+  let reportRendered = null
+  for (let i = 0; i < 40 && !reportRendered; i++) {
+    for (const fr of page.frames()) {
+      if (fr.url() !== 'about:srcdoc') continue
+      try {
+        const info = await fr.evaluate(() => ({
+          cards: [...document.querySelectorAll('.card')].map((c) => (c.querySelector('.v') || {}).innerText),
+          canvases: document.querySelectorAll('canvas').length,
+          hasChartDiv: !!document.getElementById('chart'),
+          text: (document.body && document.body.innerText) || '',
+        }))
+        if (info.cards.length > 0 || info.canvases > 0 || info.text.length > 50) {
+          reportRendered = info
+          break
+        }
+      } catch {
+        /* frame 还没就绪 */
+      }
+    }
+    if (!reportRendered) await new Promise((r) => setTimeout(r, 300))
+  }
+  check('报告：浏览器里真的渲染出内容（不是空白图）',
+    !!reportRendered && (reportRendered.cards.length > 0 || reportRendered.canvases > 0),
+    reportRendered && { cards: reportRendered.cards, canvases: reportRendered.canvases })
+  check('报告：单指标渲染大数字卡片（Ticket 18）',
+    !!reportRendered && reportRendered.cards.length === 1 && reportRendered.cards[0] === '15604.97',
+    reportRendered && reportRendered.cards)
 
   // ---- 3. HITL：预览 → 改值 → 执行 ----
   await clickButton(page, '先预览')
@@ -461,6 +502,24 @@ async function textOf(page, selector) {
   const metaText = await bodyText(page)
   check('元数据页：表清单与字段白名单都有内容', /ads_|dwd_|dim_/.test(metaText) && /字段名/.test(metaText))
   check('元数据页：写开关状态与后端一致', writeEnabled ? !metaText.includes('写入已急停') : metaText.includes('写入已急停'))
+
+  // Ticket 19：表清单不再是只读的。此前加表只能手工 INSERT INTO semantic_model，
+  // 绕过 write-enabled 与鉴权 —— 评审把这条列为「加表零改动不成立」的缺口。
+  check('元数据页：表清单有「新增表」与「注销」入口',
+    metaText.includes('新增表') && metaText.includes('注销'))
+  if (writeEnabled) {
+    await clickButton(page, '新增表')
+    await waitText(page, '物理表同名', 20000)
+    check('元数据页：新增表弹窗提示「表名必须与物理表同名」',
+      (await bodyText(page)).includes('物理表同名'))
+    // 不真建表：接口层已完成全流程（qa/verify_metadata_table.py），这里只验入口能打开
+    await page.evaluate(() => {
+      const btn = [...document.querySelectorAll('.ant-modal-footer button')]
+        .find((b) => b.innerText.replace(/\s+/g, '') === '取消')
+      if (btn) btn.click()
+    })
+    await new Promise((r) => setTimeout(r, 400))
+  }
 
   if (writeEnabled) {
     // 先用「新增」撞一个已存在的字段（QA-13 P2-2）：必须是 409 + 明确提示，

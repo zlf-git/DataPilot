@@ -38,6 +38,9 @@ export default function MetadataPage() {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form] = Form.useForm()
+  // Ticket 19：「新增表」的弹窗与表单（此前表清单只读，加表只能手工连库 INSERT）
+  const [tableOpen, setTableOpen] = useState(false)
+  const [tableForm] = Form.useForm()
   const [writeEnabled, setWriteEnabled] = useState(true)
 
   const load = async () => {
@@ -110,6 +113,32 @@ export default function MetadataPage() {
     }
   }
 
+  // Ticket 19：注册新表。此前表清单是只读的，加表只能手工 INSERT INTO semantic_model，
+  // 绕过 write-enabled 急停与鉴权 —— 那不算产品能力。
+  const submitTable = async () => {
+    const v = await tableForm.validateFields()
+    try {
+      await api.putTable(v, 'create')
+      message.success(`已注册 ${v.tableName}，接着给它加字段白名单`)
+      setTableOpen(false)
+      setActiveTable(v.tableName)
+      load()
+    } catch (e) {
+      message.error(e.message)
+    }
+  }
+
+  const removeTable = async (record) => {
+    try {
+      await api.deleteTable(record.tableName)
+      message.success(`已注销 ${record.tableName}`)
+      load()
+    } catch (e) {
+      // 后端会列出是谁在引用（指标主表/分母表/维度字典/metric_table/字段白名单），原样展示
+      message.error(e.message)
+    }
+  }
+
   const fieldColumns = [
     { title: '字段名', dataIndex: 'fieldName', width: 200, render: (v) => <Text className="mono">{v}</Text> },
     { title: '类型', dataIndex: 'fieldType', width: 130 },
@@ -176,9 +205,22 @@ export default function MetadataPage() {
             size="small"
             title={`表（${tableRows.length}）`}
             extra={
-              <Button size="small" onClick={load} loading={loading}>
-                刷新
-              </Button>
+              <Space size={8}>
+                <Button size="small" onClick={load} loading={loading}>
+                  刷新
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  disabled={!writeEnabled}
+                  onClick={() => {
+                    tableForm.setFieldsValue({ tableName: '', tableComment: '', bizDomain: '' })
+                    setTableOpen(true)
+                  }}
+                >
+                  新增表
+                </Button>
+              </Space>
             }
           >
             <Table
@@ -193,6 +235,31 @@ export default function MetadataPage() {
                 { title: '表名', dataIndex: 'tableName', render: (v) => <Text className="mono" style={{ fontSize: 12 }}>{v}</Text> },
                 { title: '业务域', dataIndex: 'bizDomain', width: 80 },
                 { title: '字段数', dataIndex: 'fieldCount', width: 70 },
+                {
+                  title: '操作',
+                  width: 80,
+                  render: (_, r) => (
+                    <Popconfirm
+                      title="注销这张表？"
+                      description="还有字段/指标/维度引用时会被拒绝，不会级联删除"
+                      onConfirm={() => removeTable(r)}
+                      okText="注销"
+                      cancelText="取消"
+                      disabled={!writeEnabled}
+                    >
+                      {/* 整行有 onClick 切表，按钮必须阻止冒泡，否则点删除会把左表切过去 */}
+                      <Button
+                        size="small"
+                        type="link"
+                        danger
+                        disabled={!writeEnabled}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        注销
+                      </Button>
+                    </Popconfirm>
+                  ),
+                },
               ]}
             />
           </Card>
@@ -281,6 +348,36 @@ export default function MetadataPage() {
             ]}
           >
             <Input.TextArea autoSize={{ minRows: 2 }} placeholder='["APP","小程序","网页"]' />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Ticket 19：新增表。注册完自动选中它，接着就能加字段 —— 这就是「加表零改动」的完整操作路径 */}
+      <Modal
+        title="新增表"
+        open={tableOpen}
+        onCancel={() => setTableOpen(false)}
+        onOk={submitTable}
+        okText="注册"
+        width={520}
+      >
+        <Form form={tableForm} layout="vertical">
+          <Form.Item
+            name="tableName"
+            label="表名（必须与引擎里的物理表同名）"
+            rules={[
+              { required: true, message: '必填' },
+              { pattern: /^[a-z_][a-z0-9_]*$/, message: '只允许小写字母/数字/下划线，字母或下划线开头' },
+            ]}
+            extra="写错名字的后果不是页面难看，而是白名单里挂着一张永远匹配不上的表（闸门①会报「指标关联的表不在白名单」）"
+          >
+            <Input placeholder="ads_new_overview_di" />
+          </Form.Item>
+          <Form.Item name="tableComment" label="表说明">
+            <Input placeholder="新渠道总览（渠道日汇总）" />
+          </Form.Item>
+          <Form.Item name="bizDomain" label="业务域">
+            <Input placeholder="交易 / 渠道 / 地域 / 商品" />
           </Form.Item>
         </Form>
       </Modal>

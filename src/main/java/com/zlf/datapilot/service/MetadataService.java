@@ -92,6 +92,93 @@ public class MetadataService {
     }
 
     /**
+     * 注册一张表（Ticket 19）：补上「加表零改动」的最后一块。
+     *
+     * <p>此前元数据只有 {@code GET /api/metadata/tables} 没有写接口，加一张表只能手工
+     * {@code INSERT INTO semantic_model} —— 那不是改代码，但也不是产品能力：它绕过了
+     * {@code write-enabled} 急停开关、绕过了鉴权、也不进审计。评审把这条列为「加表零改动不成立」的
+     * 三号缺口，就是因为它把「架构保证」退化成了「找个人连数据库」。
+     *
+     * @param createOnly {@code true}（页面「新增表」）→ 已注册则 409，不覆盖注释与业务域；
+     *                   {@code false}（upsert）→ 覆盖。
+     */
+    public SemanticModel putTable(SemanticModel m, boolean createOnly) {
+        if (m == null) {
+            throw new IllegalArgumentException("表定义不能为空");
+        }
+        validateFieldName(m.getTableName(), "table_name");
+        m.setTableComment(blankToNull(m.getTableComment()));
+        m.setBizDomain(blankToNull(m.getBizDomain()));
+
+        if (createOnly && repo.findTable(m.getTableName()) != null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "表 " + m.getTableName() + " 已注册，要改注释请用编辑（新增不会覆盖已有登记）");
+        }
+        repo.saveTable(m);
+        publisher.publishEvent(new MetadataChangedEvent("table", m.getTableName()));
+        return m;
+    }
+
+    /**
+     * 注销一张表（Ticket 19）。四类引用逐条查，任一存在就 400 并说清是谁在用，<b>不做级联删除</b>。
+     *
+     * <p>为什么级联删除比拒绝更危险：{@code metric_def.table_name} / {@code denominator_table} /
+     * {@code dimension_def} / {@code metric_table} 任一处漏删，问数时看到的都是
+     * 「指标关联的表不在白名单」（闸门①的报错），而真正的原因——有人把表注销了——没人说得出来。
+     * 拒绝并要求先清引用，排查路径只有一条。
+     *
+     * <p>字段白名单也要求先摘干净：留着 {@code field_metadata} 的行而表不在了，
+     * {@code OntologyCache.fields()} 会挂着一批「表不存在」的字段，
+     * {@code SchemaDrift} 的 inOntologyNotInDb 也会一直指着它。
+     */
+    public void deleteTable(String tableName) {
+        validateFieldName(tableName, "table_name");
+        if (repo.findTable(tableName) == null) {
+            throw new com.zlf.datapilot.exception.NotFoundException(
+                    "表不存在：" + tableName + "（刷新页面看看是不是已被别人注销）");
+        }
+
+        int fields = repo.countFieldsOfTable(tableName);
+        if (fields > 0) {
+            throw new IllegalArgumentException(
+                    "表 " + tableName + " 还有 " + fields + " 个字段在白名单里，请先在字段白名单里逐个摘掉"
+                            + "（不做级联删除：一次删掉二十几行字段，出问题无法回退）");
+        }
+        List<String> metricRefs = repo.metricIdsUsingTable(tableName);
+        if (!metricRefs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "表 " + tableName + " 仍是指标的主表（" + String.join(", ", metricRefs)
+                            + "），请先改 metric_def.table_name");
+        }
+        List<String> denomRefs = repo.metricIdsUsingTableAsDenominator(tableName);
+        if (!denomRefs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "表 " + tableName + " 仍是复合指标的分母表（" + String.join(", ", denomRefs)
+                            + "），请先改 metric_def.denominator_table");
+        }
+        List<String> dimRefs = repo.dimensionNamesOfTable(tableName);
+        if (!dimRefs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "表 " + tableName + " 仍被维度字典引用（维度：" + String.join(", ", dimRefs)
+                            + "），请先改 dimension_def.table_name");
+        }
+        List<String> metricTableRefs = repo.metricTableRefs(tableName);
+        if (!metricTableRefs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "表 " + tableName + " 仍挂在 metric_table 关联里（指标：" + String.join(", ", metricTableRefs)
+                            + "），请先清理 metric_table");
+        }
+
+        repo.deleteTable(tableName);
+        publisher.publishEvent(new MetadataChangedEvent("table", tableName));
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    /**
      * 字段白名单写入（Ticket 13）：元数据页「字段白名单编辑」的落点。
      *
      * <p>为什么校验得这么细：{@code field_metadata} 不只是展示用的注释表，它就是

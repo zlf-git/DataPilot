@@ -215,6 +215,53 @@ public class MetadataRepository {
                 m.getTableName(), m.getTableComment(), m.getBizDomain());
     }
 
+    /** 单表查询（Ticket 19：加表/删表前的存在性确认） */
+    public SemanticModel findTable(String tableName) {
+        List<SemanticModel> list = jdbc.query(
+                "SELECT id, table_name, table_comment, biz_domain FROM semantic_model WHERE table_name = ?",
+                TABLE_MAPPER, tableName);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    public int deleteTable(String tableName) {
+        return jdbc.update("DELETE FROM semantic_model WHERE table_name = ?", tableName);
+    }
+
+    /** 该表还挂着多少个字段白名单（Ticket 19 删表前守卫：不级联删，要求先把字段摘干净） */
+    public int countFieldsOfTable(String tableName) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM field_metadata WHERE table_name = ?", Integer.class, tableName);
+        return n == null ? 0 : n;
+    }
+
+    /** 主表引用这张表的指标（Ticket 19 删表前守卫） */
+    public List<String> metricIdsUsingTable(String tableName) {
+        return jdbc.queryForList(
+                "SELECT metric_id FROM metric_def WHERE table_name = ?", String.class, tableName);
+    }
+
+    /** 分母表引用这张表的复合指标（gmv_channel_ratio 这类跨表比值） */
+    public List<String> metricIdsUsingTableAsDenominator(String tableName) {
+        return jdbc.queryForList(
+                "SELECT metric_id FROM metric_def WHERE denominator_table = ?", String.class, tableName);
+    }
+
+    /** dimension_def 里绑定到这张表的维度名 */
+    public List<String> dimensionNamesOfTable(String tableName) {
+        return jdbc.queryForList(
+                "SELECT dim_name FROM dimension_def WHERE table_name = ?", String.class, tableName);
+    }
+
+    /** metric_table 关联表里指向这张表的指标 */
+    public List<String> metricTableRefs(String tableName) {
+        return jdbc.queryForList(
+                "SELECT metric_id FROM metric_table WHERE table_name = ?", String.class, tableName);
+    }
+
+    public int deleteMetricTableRefs(String tableName) {
+        return jdbc.update("DELETE FROM metric_table WHERE table_name = ?", tableName);
+    }
+
     public void saveField(FieldMetadata f) {
         // Ticket 13：原来这里漏了 field_role —— 白名单编辑页把角色从 dimension 改成 metric 后
         // 接口返回成功、库里没变，是「假成功」。四列一起进 INSERT 与 ON DUPLICATE。

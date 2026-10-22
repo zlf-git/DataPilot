@@ -27,7 +27,9 @@ pre.code-block {
 /* 报告 iframe（reportHtml 是完整 HTML 文档，只能整篇塞进 iframe，不能内联注入） */
 iframe.report-frame {
   width: 100%;
-  height: 560px;
+  /* Ticket 18：报告从「一张图 + 一张表」扩成「卡片 + 口径 + 明细 + SQL」，
+     560px 装不下会一直出现内层滚动条，放宽到 680px */
+  height: 680px;
   border: 1px solid #e5e6eb;
   border-radius: 6px;
   background: #fff;

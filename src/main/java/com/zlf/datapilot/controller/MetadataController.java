@@ -60,6 +60,33 @@ public class MetadataController {
     }
 
     /**
+     * 表注册（写，需 write-enabled；Ticket 19）。
+     *
+     * <p>补这个接口的原因是「加表零改动」曾经不成立：元数据只有读接口，加一张表只能手工
+     * {@code INSERT INTO semantic_model}，绕过急停开关与审计。语义与字段一致：
+     * {@code mode=create} 已注册则 409，默认 {@code upsert} 覆盖注释/业务域。
+     */
+    @PutMapping("/metadata/tables")
+    public ResponseEntity<?> putTable(@RequestBody SemanticModel m,
+                                      @RequestParam(defaultValue = "upsert") String mode) {
+        checkWriteEnabled();
+        return ResponseEntity.ok(service.putTable(m, "create".equalsIgnoreCase(mode)));
+    }
+
+    /**
+     * 注销一张表（写，需 write-enabled；Ticket 19）。
+     *
+     * <p>被字段白名单、指标主表/分母表、维度字典、metric_table 任一处引用时 400 并列出引用方，
+     * 不做级联删除。
+     */
+    @DeleteMapping("/metadata/tables")
+    public ResponseEntity<?> deleteTable(@RequestParam String tableName) {
+        checkWriteEnabled();
+        service.deleteTable(tableName);
+        return ResponseEntity.ok(Map.of("deleted", true, "tableName", tableName));
+    }
+
+    /**
      * 字段白名单写入（写，需 write-enabled；Ticket 13）。
      *
      * <p>按 (table_name, field_name) upsert —— 页面「编辑字段」用它。但如果「新增字段」也用它，

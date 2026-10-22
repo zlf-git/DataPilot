@@ -93,6 +93,38 @@ class EngineWhitelistTest {
     }
 
     /**
+     * Ticket 19：引擎未声明表清单时（当前 StarRocks 侧的常态），自检不能报失配。
+     *
+     * <p>修复前 {@code metadataNotDeclared = metadata - declared}，declared 为空时它恒等于全部元数据，
+     * 于是每次启动都 warn 四条「元数据白名单里有引擎未声明的表」+ {@code consistent=false}。
+     * 加第 5 张表的人看到这个告警，第一反应是回来改代码 —— 恰好和「加表零改动」相反。
+     */
+    @Test
+    void undeclaredEngineReportsMetadataOnlyInsteadOfMismatch() {
+        EngineWhitelist wl = new EngineWhitelist(
+                engine("starrocks", Set.of()),
+                cache("ads_trade_overview_di", "ads_channel_conversion_di", "brand_new_table"));
+        Map<String, Object> r = wl.report();
+
+        assertThat(r.get("declarationMode")).isEqualTo("metadata-only");
+        assertThat(strings(r.get("declaredTables"))).isEmpty();
+        // 三张都在元数据里，一张都不该被判「引擎没声明」——没声明就是没限制
+        assertThat(strings(r.get("metadataNotDeclared"))).isEmpty();
+        assertThat(strings(r.get("effectiveTables")))
+                .containsExactly("ads_channel_conversion_di", "ads_trade_overview_di", "brand_new_table");
+        assertThat(r.get("consistent")).isEqualTo(true);
+    }
+
+    @Test
+    void declaredEngineKeepsDeclarationMode() {
+        EngineWhitelist wl = new EngineWhitelist(
+                engine("mysql", Set.of("orders")), cache("orders"));
+        Map<String, Object> r = wl.report();
+        assertThat(r.get("declarationMode")).isEqualTo("declared");
+        assertThat(r.get("consistent")).isEqualTo(true);
+    }
+
+    /**
      * QA-07 P2-1 的回归点：<b>只有 metadataNotDeclared 非空</b>也要判失配。
      *
      * <p>这就是「引擎切到 MySQL、元数据还指着 4 张 StarRocks 表」的真实场景：

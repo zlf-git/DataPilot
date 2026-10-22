@@ -110,6 +110,12 @@ export const api = {
 
   // ---- 元数据 / 字段白名单 ----
   tables: () => request('/api/metadata/tables'),
+  /** Ticket 19：注册一张表（mode=create 已存在则 409，upsert 覆盖注释/业务域） */
+  putTable: (t, mode = 'upsert') =>
+    request(`/api/metadata/tables?mode=${encodeURIComponent(mode)}`, { method: 'PUT', body: t }),
+  /** Ticket 19：注销一张表（被字段/指标/维度/关联引用时后端 400 并说清是谁在用） */
+  deleteTable: (tableName) =>
+    request(`/api/metadata/tables?tableName=${encodeURIComponent(tableName)}`, { method: 'DELETE' }),
   fields: () => request('/api/metadata/fields'),
   /** mode=create：已存在则后端 409（不覆盖）；mode=upsert：覆盖 */
   putField: (f, mode = 'upsert') =>

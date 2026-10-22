@@ -18,12 +18,18 @@ import java.util.List;
 @Conditional(OnEngineType.StarRocks.class)
 public class StarRocksSqlExecutor extends JdbcSqlExecutor {
 
-    /** 声明给 Agent 读的 ADS 表（Ticket 07 钩子）。与 semantic_model 取交集后才生效，见 EngineWhitelist。 */
-    private static final List<String> DECLARED = List.of(
-            "ads_trade_overview_di",
-            "ads_channel_conversion_di",
-            "ads_region_gmv_di",
-            "ads_product_sales_rank_di");
+    /**
+     * 声明给 Agent 读的表。
+     *
+     * <p><b>故意留空</b>（Ticket 19）：这里原本写死 {@code ads_* } 四张表，后果是**加一张表就要改代码重编译**——
+     * 而「加表零改动」正是本项目声明的架构性质。留空后语义是「引擎不额外限制，可读集合完全由
+     * semantic_model 决定」，物理上到底有没有这些表由 {@link com.zlf.datapilot.knowledge.SchemaDrift}
+     * 查 information_schema 兜底（那个比静态清单准得多），闸门①的存在性/权限也仍然只认元数据白名单。
+     *
+     * <p>反过来若哪天确实要收紧（例如只开放 ads_ 前缀），在这里加回来也不会影响加表流程，
+     * 只是自检会开始报 declaredNotInMetadata。
+     */
+    private static final List<String> DECLARED = List.of();
 
     public StarRocksSqlExecutor(EngineJdbc engineJdbc) {
         super(engineJdbc, DECLARED);

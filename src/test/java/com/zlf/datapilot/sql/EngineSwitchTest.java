@@ -81,9 +81,9 @@ class EngineSwitchTest {
             assertThat(ctx.getBeansOfType(SqlExecutor.class)).hasSize(1);
             SqlExecutor ex = ctx.getBean(SqlExecutor.class);
             assertThat(ex.engineName()).isEqualTo("starrocks");
-            assertThat(((JdbcSqlExecutor) ex).readableTables())
-                    .containsExactlyInAnyOrder("ads_trade_overview_di", "ads_channel_conversion_di",
-                            "ads_region_gmv_di", "ads_product_sales_rank_di");
+            // Ticket 19：StarRocks 侧不再写死 4 张 ADS 表（加表要改代码的硬编码）。
+            // 留空 = 不额外限制，可读集合完全由 semantic_model 决定；物理一致性由 SchemaDrift 兜。
+            assertThat(((JdbcSqlExecutor) ex).readableTables()).isEmpty();
             // 配置（properties）与条件（@ConditionalOnProperty）必须指向同一个引擎
             assertThat(ctx.getBean(EngineJdbc.class).engineType()).isEqualTo(ex.engineName());
         });
