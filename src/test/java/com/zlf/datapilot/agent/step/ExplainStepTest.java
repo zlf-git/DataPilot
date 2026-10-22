@@ -110,8 +110,8 @@ class ExplainStepTest {
     }
 
     @Test
-    @DisplayName("多行答案：列出前 5 行并标注共几行")
-    void multiRowAnswerListsUpToFive() {
+    @DisplayName("Ticket 22：多行结果也用一句判断作答，不再念「共 7 行：n1=1、n2=2…」")
+    void multiRowAnswerUsesVerdict() {
         List<Map<String, Object>> rows = new ArrayList<>();
         for (int i = 1; i <= 7; i++) {
             rows.add(row("name", "n" + i, "value", i));
@@ -119,20 +119,39 @@ class ExplainStepTest {
         AgentContext c = ctx(rows);
         step.execute(c);
 
-        assertThat(c.getAnswer()).startsWith("共 7 行").contains("n1=1").contains("等");
-        assertThat(c.getAnswer()).doesNotContain("n6=");
+        // 1+2+…+7=28；最大项 n7 占 25.0%。ASCII 标签后补空格，中文标签不留（两种都不难看）
+        assertThat(c.getAnswer()).isEqualTo("value合计 28，n7 为最大项（占 25.0%）");
+        // 明细仍在分析区，没丢
+        assertThat(c.getAnalysis().findings().toString()).contains("28");
     }
 
     @Test
-    @DisplayName("Ticket 21：有图必须有结论 —— analysis 被写入，且不改动 answer")
-    void analysisIsFilledWithoutTouchingAnswer() {
+    @DisplayName("没有维度列时退回「共 N 行」：单值清单没有判断可说，念数字才是诚实的")
+    void numericOnlyRowsFallBackToRowCount() {
+        // 两列都是数值 → 没有维度列，占比/集中度都无从谈起
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 1; i <= 7; i++) {
+            rows.add(row("a", i, "b", i * 2));
+        }
+        AgentContext c = ctx(rows);
+        step.execute(c);
+
+        assertThat(c.getAnswer()).startsWith("共 7 行");
+        assertThat(c.getAnalysis().findings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Ticket 21/22：analysis 被写入；answer 换成一句判断，findings 仍有明细")
+    void analysisIsFilledAndAnswerBecomesVerdict() {
         AgentContext c = ctx(List.of(
                 row("category_name", "电脑外设", "sale_cnt_product", 58),
                 row("category_name", "办公家具", "sale_cnt_product", 34)));
         step.execute(c);
 
-        // answer 仍是 Ticket 11 的「共 N 行」，分析另走一条通道
-        assertThat(c.getAnswer()).startsWith("共 2 行");
+        // Ticket 22：answer 不再念「共 2 行」，而是给出判断。
+        // 本用例没挂 recalledMetadata，所以指标名回落成 metricId（不猜中文名）
+        assertThat(c.getAnswer()).isEqualTo("sale_cnt_product合计 92，电脑外设为最大项（占 63.0%）");
+        // 量化明细另走一条通道，没有被 answer 取代
         assertThat(c.getAnalysis().findings()).isNotEmpty();
         assertThat(c.getAnalysis().findings().toString()).contains("63.0%");
     }

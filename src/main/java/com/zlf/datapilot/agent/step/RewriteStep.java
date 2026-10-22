@@ -70,6 +70,20 @@ public class RewriteStep implements AgentStep {
     /** 按天问 = 合法：每天各自去重，不产生「累计」值 */
     private static final Pattern PER_DAY = Pattern.compile("每天|每日|每一天|按天|逐日|分天|各天|趋势");
 
+    /**
+     * 报告请求里的「非取数语义」成分（Ticket 22）。
+     *
+     * <p>剥掉这些之后若什么都不剩，说明这句话<b>不是新提问</b>，只是要求把上一轮换个呈现方式。
+     * 顺序敏感：长的放前面，否则「完整的报告」会被「报告」先吃掉、留下一个「完整的」。
+     */
+    private static final Pattern REPORT_NOISE = Pattern.compile(
+            "完整的?报告|详细(的)?报告|完整版|报告|完整|详细|总结|汇总|导出|下载"
+                    + "|一份|生成|整理|给我|我需要|我要|需要|帮我|麻烦|那么|看看|一下");
+
+    /** 标点与空白不算语义（与 {@link #stripAnaphora} 一致） */
+    private static final Pattern NOISE_CHARS =
+            Pattern.compile("[\\p{Punct}\\s，。？！、；：（）【】「」…—]");
+
     private final SessionStore sessions;
 
     public RewriteStep(SessionStore sessions) {
@@ -93,6 +107,24 @@ public class RewriteStep implements AgentStep {
         }
 
         SessionStore.Round last = sessions.last(ctx.getSessionId());
+
+        // ⓪' 纯报告请求（Ticket 22）：「那么我需要完整的报告」这类句子不含取数语义，
+        // 剥掉「报告/完整/我需要」后什么都不剩 —— 它要求的不是再问一遍，而是「把上一轮讲完整」。
+        // 此前被判成「换了维度的追问」并提示「请把条件说全」，属于答非所问：
+        // 用户要的条件本来就有，就在上一轮里。
+        if (isReportOnly(question)) {
+            if (last == null) {
+                ctx.reject("这里还没有可以整理成报告的上一轮查询。"
+                        + "先问一个具体问题（例如「近 7 天各渠道的 GMV 是多少」），再让我出报告。", "rewrite");
+                return ctx;
+            }
+            ctx.setRewrittenQuestion(last.rewrittenQuestion());
+            ctx.setReportRequested(true);
+            log.debug("多轮补全（报告请求）：session={} 「{}」沿用「{}」",
+                    ctx.getSessionId(), question, ctx.getRewrittenQuestion());
+            return ctx;
+        }
+
         if (last == null) {
             ctx.setRewrittenQuestion(question);
             return ctx;
@@ -192,6 +224,21 @@ public class RewriteStep implements AgentStep {
             s = s.replace(word, "");
         }
         // 中文/英文标点与空白一律不算语义
-        return s.replaceAll("[\\p{Punct}\\s，。？！、；：（）【】「」…—]", "").trim();
+        return NOISE_CHARS.matcher(s).replaceAll("").trim();
+    }
+
+    /**
+     * 纯报告请求判定：含「报告」<b>且</b> 剥掉报告与客套成分后一无所有。
+     *
+     * <p>为什么要求「剥完为空」而不是「含报告就算」：
+     * 「10 月 19 日各渠道 GMV 的报告」自带完整取数条件，必须走正常问数流程，
+     * 一旦按报告请求处理就会忽略它自己那句里的条件，转去跑上一轮问题 —— 那是静默错数。
+     */
+    private boolean isReportOnly(String question) {
+        if (!question.contains("报告")) {
+            return false;
+        }
+        String residue = NOISE_CHARS.matcher(REPORT_NOISE.matcher(question).replaceAll("")).replaceAll("");
+        return residue.isEmpty();
     }
 }

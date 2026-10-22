@@ -83,6 +83,7 @@ public final class ResultAnalyzer {
             return Analysis.EMPTY;
         }
         List<String> findings = new ArrayList<>();
+        SummarySlot verdicts = new SummarySlot();
         List<Column> numeric = numericColumns(rows, metricDefs);
         String labelKey = firstLabelKey(rows, numeric);
 
@@ -90,24 +91,54 @@ public final class ResultAnalyzer {
             // 纯文本结果（如明细 DISTINCT）：没有可算的量，不硬凑结论
             return Analysis.EMPTY;
         }
-        boolean temporal = labelKey != null && isTemporal(rows, labelKey);
+        if (labelKey == null) {
+            // 没有维度列（单值结果、多指标各占一列）：占比、集中度、均值偏离全都无从谈起 ——
+            // 硬算只能得到「n1合计 7；1 占 14.3%」这种没人读得懂的句子（Ticket 22 实测踩到）
+            return new Analysis("", List.of(), detectGaps(numeric, ir, metricDefs, question));
+        }
+        boolean temporal = isTemporal(rows, labelKey);
         // 两列份额对照放最前：「A 占比与 B 占比是否匹配」通常是问题的主句，
         // 分别列出两组占比让人自己心算，等于没回答问题
-        addShareMismatchFindings(findings, rows, labelKey, numeric);
+        boolean sharesCovered = addShareMismatchFindings(findings, rows, labelKey, numeric, verdicts);
         // 派生结论（金额÷数量 这类两列之间的比值）紧随其后：「件单价偏高还是偏低」往往是第二问
-        addDerivedFindings(findings, rows, labelKey, numeric, metricDefs, question);
-        // 多列时不逐列展开全部分布细节：占比对照已经把结构讲清楚了，
-        // 再对每列重复「均值偏离 + 极值比」只会把真正回答问题的前两条挤出上限
-        boolean compact = numeric.size() > 1;
+        addDerivedFindings(findings, rows, labelKey, numeric, metricDefs, question, verdicts);
+        // 多列时不逐列展开分布细节（Ticket 22）：
+        // 份额对照已经逐项给了两列的占比，再对每列重复「合计 + 集中在某项（占 X）」，
+        // 就是同一句话说两遍 —— 8 条结论里 4 条是这种复述，观感是「啰嗦」而不是「智能」。
+        boolean lean = sharesCovered || numeric.size() > 1;
         for (Column col : numeric) {
             if (temporal) {
-                addTemporalFindings(findings, rows, labelKey, col);
-            } else {
-                addDistributionFindings(findings, rows, labelKey, col, compact);
+                addTemporalFindings(findings, rows, labelKey, col, verdicts);
+            } else if (!sharesCovered) {
+                addDistributionFindings(findings, rows, labelKey, col, lean, verdicts);
             }
         }
         List<String> gaps = detectGaps(numeric, ir, metricDefs, question);
-        return new Analysis(trim(findings), gaps);
+        return new Analysis(verdicts.text(), trim(findings), gaps);
+    }
+
+    /**
+     * 一句话结论的收集槽（Ticket 22）。
+     *
+     * <p>为什么需要它：{@link Analysis#findings()} 是<b>支撑材料</b>，页面顶部要的是
+     * <b>一句判断</b>。两者不能靠事后解析字符串从 findings 里凑（句式一改就崩），
+     * 所以在算的过程中就把「定性判断」单独收集，按调用顺序决定优先级 ——
+     * 先算的（份额是否匹配）比后算的（哪一项最大）更接近问题的主句。
+     *
+     * <p>上限 2 条：一个问句通常最多两问（「是否匹配」+「偏高还是偏低」），再多就又是复述了。
+     */
+    private static final class SummarySlot {
+        private final List<String> parts = new ArrayList<>();
+
+        void add(String verdict) {
+            if (verdict != null && !verdict.isBlank() && parts.size() < 2 && !parts.contains(verdict)) {
+                parts.add(verdict.trim());
+            }
+        }
+
+        String text() {
+            return String.join("；", parts);
+        }
     }
 
     // ---------------------------------------------------------------- 分布型（按维度分组）
@@ -117,9 +148,13 @@ public final class ResultAnalyzer {
      *
      * <p>「相对均值偏离」这条专门回答「X 比大盘高还是低」类问题 ——
      * 只要 rows 里有这一列，均值就是大盘，逐项比一下就能定性，不需要额外查一次。
+     *
+     * @param lean 多列场景（份额对照已经讲过结构）：只出「合计 + 构成」一条，
+     *             不再判定集中度与离散度 —— 那两项是对占比的二次解读，重复说一遍只会稀释结论
      */
     private void addDistributionFindings(List<String> out, List<Map<String, Object>> rows,
-                                         String labelKey, Column col, boolean compact) {
+                                         String labelKey, Column col, boolean lean,
+                                         SummarySlot verdicts) {
         List<Cell> cells = cells(rows, labelKey, col.key());
         if (cells.isEmpty()) {
             return;
@@ -148,15 +183,22 @@ public final class ResultAnalyzer {
             out.add(sb.append("。").toString());
 
             double cr1 = desc.get(0).value() / total;
-            if (cr1 >= CONCENTRATED) {
-                out.add(name + "集中在 " + label(desc.get(0)) + " 一项（占 " + pct(cr1) + "），结构偏集中。");
-            } else if (cr1 <= DISPERSED && cells.size() >= 3) {
-                out.add(name + "分布较分散，最大一项只占 " + pct(cr1) + "。");
+            // 两项构成的分布不谈「集中/分散」：任一项必然 ≥50%，这句话永远成立，等于没说。
+            // ≥3 项时才是有信息量的判断（Ticket 22）
+            if (!lean && cells.size() >= 3) {
+                if (cr1 >= CONCENTRATED) {
+                    out.add(name + "集中在" + labelPlus(label(desc.get(0)), "一项") + "（占 " + pct(cr1) + "），结构偏集中。");
+                } else if (cr1 <= DISPERSED) {
+                    out.add(name + "分布较分散，最大一项只占 " + pct(cr1) + "。");
+                }
             }
+            // 兜底判定：单列分布题没有更具体的主句时，用「合计 + 头部项」回答
+            verdicts.add(name + "合计 " + num(total) + "，"
+                    + labelPlus(label(desc.get(0)), "为最大项") + "（占 " + pct(cr1) + "）");
         }
 
-        // 均值偏离与离散度：只在单列时展开（compact 时让位给份额对照与派生比值）
-        if (!compact) {
+        // 均值偏离与离散度：只在单列时展开（多列时让位给份额对照与派生比值）
+        if (!lean) {
             addDispersionFindings(out, name, cells);
         }
     }
@@ -179,7 +221,7 @@ public final class ResultAnalyzer {
                     if (i > 0) {
                         sb.append("，");
                     }
-                    sb.append(label(c)).append(diff > 0 ? "高 " : "低 ").append(pct(Math.abs(diff)));
+                    sb.append(labelPlus(label(c), diff > 0 ? "高 " : "低 ")).append(pct(Math.abs(diff)));
                 }
                 out.add(sb.append("。").toString());
             }
@@ -207,7 +249,7 @@ public final class ResultAnalyzer {
      * 所以这里显式按日期排一遍，不假设调用方给了什么顺序。
      */
     private void addTemporalFindings(List<String> out, List<Map<String, Object>> rows,
-                                     String labelKey, Column col) {
+                                     String labelKey, Column col, SummarySlot verdicts) {
         List<Cell> cells = cells(rows, labelKey, col.key());
         if (cells.isEmpty()) {
             return;
@@ -225,6 +267,15 @@ public final class ResultAnalyzer {
                 out.add(name + "从 " + label(first) + " 的 " + num(first.value()) + " 变为 "
                         + label(last) + " 的 " + num(last.value()) + "，"
                         + (change >= 0 ? "上升 " : "下降 ") + pct(Math.abs(change)) + "。");
+                StringBuilder headline = new StringBuilder(name)
+                        .append("在 ").append(ordered.size()).append(" 个周期内")
+                        .append(change >= 0 ? "上升 " : "下降 ").append(pct(Math.abs(change)));
+                Cell prev = ordered.get(ordered.size() - 2);
+                if (prev.value() != 0) {
+                    double dod = (last.value() - prev.value()) / Math.abs(prev.value());
+                    headline.append("，最近一期环比").append(dod >= 0 ? "上升 " : "下降 ").append(pct(Math.abs(dod)));
+                }
+                verdicts.add(headline.toString());
             }
             Cell prev = ordered.get(ordered.size() - 2);
             if (prev.value() != 0) {
@@ -252,10 +303,10 @@ public final class ResultAnalyzer {
      * 再给一句定性：一致 / 有差异 / 明显不一致。阈值是经验值（3pp / 10pp），
      * 说成「基本一致」而不是「完全相等」，因为抽样波动本来就不该被当成零。
      */
-    private void addShareMismatchFindings(List<String> out, List<Map<String, Object>> rows,
-                                          String labelKey, List<Column> numeric) {
+    private boolean addShareMismatchFindings(List<String> out, List<Map<String, Object>> rows,
+                                             String labelKey, List<Column> numeric, SummarySlot verdicts) {
         if (labelKey == null || numeric.size() < 2) {
-            return;
+            return false;
         }
         Column first = numeric.get(0);
         Column second = numeric.get(1);
@@ -266,14 +317,14 @@ public final class ResultAnalyzer {
             totalB += asDouble(row.get(second.key()));
         }
         if (totalA <= 0 || totalB <= 0) {
-            return;
+            return false;
         }
         List<ShareDiff> diffs = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             double a = asDouble(row.get(first.key()));
             double b = asDouble(row.get(second.key()));
             if (a < 0 || b < 0) {
-                return;
+                return false;
             }
             String label = String.valueOf(row.get(labelKey));
             diffs.add(new ShareDiff(label, a / totalA, b / totalB, (a / totalA - b / totalB) * 100));
@@ -299,16 +350,33 @@ public final class ResultAnalyzer {
 
         double maxAbs = desc.isEmpty() ? 0 : Math.abs(desc.get(0).diffPp());
         String verdict;
+        String headline;
         if (maxAbs <= 3) {
             verdict = "差异在 3 个百分点以内，两个量值的结构基本一致。";
+            headline = first.display() + "与" + second.display() + "结构基本一致，最大差 "
+                    + oneDecimal(maxAbs) + " 个百分点";
         } else if (maxAbs <= 10) {
-            verdict = "最大差异约 " + BigDecimal.valueOf(maxAbs).setScale(1, java.math.RoundingMode.HALF_UP)
-                    + " 个百分点，存在结构性差异但不悬殊。";
+            verdict = "最大差异约 " + oneDecimal(maxAbs) + " 个百分点，存在结构性差异但不悬殊。";
+            headline = first.display() + "与" + second.display() + "有结构性差异（最大差 "
+                    + oneDecimal(maxAbs) + " 个百分点），但整体次序一致";
         } else {
-            verdict = "最大差异达 " + BigDecimal.valueOf(maxAbs).setScale(1, java.math.RoundingMode.HALF_UP)
-                    + " 个百分点，两个量值的结构明显不一致 —— 说明高价与低价品类的贡献不同。";
+            verdict = "最大差异达 " + oneDecimal(maxAbs) + " 个百分点，两个量值的结构明显不一致 —— "
+                    + "说明高价与低价品类的贡献不同。";
+            headline = first.display() + "与" + second.display() + "结构明显不一致（最大差 "
+                    + oneDecimal(maxAbs) + " 个百分点），高价与低价项贡献不同";
         }
         out.add(verdict);
+        verdicts.add(headline);
+
+        // 两列合计单独给一句：份额对照只给百分比，绝对规模仍要能一眼看到（Ticket 22）。
+        // 有了这句，就不必再对每列重复「X 合计 N；A 占 p%」—— 那正是复述的来源
+        out.add("两列合计：" + first.display() + " " + num(totalA)
+                + "，" + second.display() + " " + num(totalB) + "。");
+        return true;
+    }
+
+    private static String oneDecimal(double v) {
+        return BigDecimal.valueOf(v).setScale(1, java.math.RoundingMode.HALF_UP).toPlainString();
     }
 
     private record ShareDiff(String label, double shareA, double shareB, double diffPp) {
@@ -331,7 +399,8 @@ public final class ResultAnalyzer {
      * 注意整体比值不等于逐项比值的平均，用后者会把大额项和小额项等权，得出相反的结论。
      */
     private void addDerivedFindings(List<String> out, List<Map<String, Object>> rows, String labelKey,
-                                    List<Column> numeric, List<MetricDef> metricDefs, String question) {
+                                    List<Column> numeric, List<MetricDef> metricDefs, String question,
+                                    SummarySlot verdicts) {
         if (labelKey == null || numeric.size() < 2) {
             return;
         }
@@ -392,20 +461,27 @@ public final class ResultAnalyzer {
                     .toList();
             if (!biased.isEmpty()) {
                 StringBuilder cmp = new StringBuilder();
+                StringBuilder headline = new StringBuilder(unit)
+                        .append("整体 ").append(num(overall)).append("，");
                 for (int i = 0; i < biased.size(); i++) {
                     Cell c = biased.get(i);
                     double diff = (c.value() - overall) / overall;
                     if (i > 0) {
                         cmp.append("，");
+                        headline.append("，");
                     }
                     cmp.append(label(c)).append(diff > 0 ? "高于整体 " : "低于整体 ").append(pct(Math.abs(diff)));
+                    headline.append(labelPlus(label(c), diff > 0 ? "偏高 " : "偏低 ")).append(pct(Math.abs(diff)));
                 }
                 out.add(cmp.append("。").toString());
+                verdicts.add(headline.toString());
             } else {
                 // 都在阈值内也必须说话：「偏高还是偏低」是明确问句，
                 // 沉默会让人以为这一问没答，而实际答案是「基本持平」
                 out.add("各项与整体相差都在 " + pct(BIAS_THRESHOLD)
                         + " 以内，没有明显偏高或偏低的项，基本持平。");
+                verdicts.add(unit + "整体 " + num(overall) + "，各项与整体相差都在 "
+                        + pct(BIAS_THRESHOLD) + " 以内，基本持平");
             }
         }
     }
@@ -636,6 +712,15 @@ public final class ResultAnalyzer {
 
     private String label(Cell c) {
         return c.label() == null || c.label().isBlank() || "null".equals(c.label()) ? "（空）" : c.label();
+    }
+
+    /**
+     * 标签后面接中文时的空格规则：ASCII 开头（APP、4K显示器）补一个空格，
+     * 中文开头不留 —— 否则会出现「APP为最大项」「电脑外设 为最大项」两种难看。
+     */
+    static String labelPlus(String label, String suffix) {
+        boolean ascii = !label.isEmpty() && label.charAt(0) < 128;
+        return label + (ascii ? " " : "") + suffix;
     }
 
     private boolean containsAny(String text, String[] words) {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -63,6 +63,15 @@ export default function AskPage() {
 
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewResult, setPreviewResult] = useState(null)
+
+  // Ticket 22：「我需要完整的报告」这类请求沿用上一轮问题重跑一遍，
+  // 用户要的是报告本身，所以直接滚到报告区，而不是让他自己往下翻
+  const reportRef = useRef(null)
+  useEffect(() => {
+    if (result?.reportRequested && reportRef.current) {
+      reportRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [result])
 
   const runAsk = async () => {
     setLoading(true)
@@ -301,7 +310,12 @@ export default function AskPage() {
         )}
 
         {result?.reportHtml && (
-          <Card size="small" title="分析报告（后端生成的独立 HTML）" style={{ marginTop: 12 }}>
+          <Card
+            ref={reportRef}
+            size="small"
+            title={result.reportRequested ? '完整报告（本轮请求）' : '分析报告（后端生成的独立 HTML）'}
+            style={{ marginTop: 12 }}
+          >
             {/* reportHtml 是一整篇 HTML（含 ECharts 脚本），内联注入会污染本页样式与脚本作用域，
                 所以用 iframe srcDoc + sandbox=allow-scripts 隔开：能画图，但碰不到父页面 */}
             <iframe className="report-frame" title="report" sandbox="allow-scripts" srcDoc={result.reportHtml} />

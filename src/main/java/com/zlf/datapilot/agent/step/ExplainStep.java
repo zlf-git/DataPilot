@@ -44,16 +44,21 @@ public class ExplainStep implements AgentStep {
     public AgentContext execute(AgentContext ctx) {
         List<Map<String, Object>> rows = ctx.getQueryResult();
         ctx.setChartType(chartType(rows));
-        if (ctx.getAnswer() == null || ctx.getAnswer().isBlank()) {
-            ctx.setAnswer(describe(rows));
-        }
+        boolean answerFilled = ctx.getAnswer() != null && !ctx.getAnswer().isBlank();
         // 分析独立于 answer：即使 answer 已被结果自检/环比填过，结论与缺口照样要算。
         // 指标中文名从召回的 metric_def 里取，取不到就显示 metricId，不猜语义。
-        ctx.setAnalysis(resultAnalyzer.analyze(
+        Analysis analysis = resultAnalyzer.analyze(
                 rows,
                 ctx.getIr(),
                 ctx.getRecalledMetadata() == null ? null : ctx.getRecalledMetadata().getMetrics(),
-                ctx.getUserQuestion()));
+                ctx.getUserQuestion());
+        ctx.setAnalysis(analysis);
+        if (!answerFilled) {
+            // Ticket 22：有判断就用判断替换「共 N 行（a → b）：x=1、y=2」这句复述。
+            // 页面顶部那句话是用户第一眼看到的东西，念数字等于没回答；
+            // 而「共 N 行」还在分析区的「两列合计」里，信息没丢。
+            ctx.setAnswer(analysis.summary().isEmpty() ? describe(rows) : analysis.summary());
+        }
         return ctx;
     }
 

@@ -65,21 +65,25 @@ class ResultAnalyzerTest {
             metric("sale_cnt_product", "商品销量", "SUM(sale_cnt)"));
 
     @Test
-    @DisplayName("按维度分组：算出占比、集中度、均值偏离、极值比（数字必须能反推）")
+    @DisplayName("按维度分组：算出占比、均值偏离、极值比；两项不谈集中（任一项必然过半）")
     void distributionFindings() {
         Analysis a = analyzer.analyze(twoCategories(), irOf("sale_cnt_product"),
                 PRODUCT_METRICS, "各品类销量情况");
 
-        assertThat(a.findings()).hasSize(4);
+        // Ticket 22：只剩 3 条 —— 原第 2 条「集中在电脑外设（占 63%），结构偏集中」被删。
+        // 两项构成里任一项必然 ≥50%，那句话永远成立，等于把第 1 条的「占 63.0%」换个说法再说一遍
+        assertThat(a.findings()).hasSize(3);
         // 58+34=92；58/92=63.0%，34/92=37.0%
         assertThat(a.findings().get(0))
                 .isEqualTo("商品销量合计 92；电脑外设 58 占 63.0%，办公家具 34 占 37.0%。");
-        // 头部占 63.0% ≥ 60% → 判为集中
-        assertThat(a.findings().get(1)).contains("集中在 电脑外设").contains("63.0%").contains("偏集中");
         // 均值 46，58 高 26.1%，34 低 26.1%
-        assertThat(a.findings().get(2)).isEqualTo("相对均值 46：电脑外设高 26.1%，办公家具低 26.1%。");
+        assertThat(a.findings().get(1)).isEqualTo("相对均值 46：电脑外设高 26.1%，办公家具低 26.1%。");
         // 58/34=1.71
-        assertThat(a.findings().get(3)).contains("极值相差 1.71 倍");
+        assertThat(a.findings().get(2)).contains("极值相差 1.71 倍");
+        // 两项分布不该出现「集中/分散」这类判断
+        assertThat(a.findings()).noneMatch(f -> f.contains("集中在") || f.contains("较分散"));
+        // 一句话结论：兜底判定用「合计 + 头部项」
+        assertThat(a.summary()).isEqualTo("商品销量合计 92，电脑外设为最大项（占 63.0%）");
     }
 
     @Test

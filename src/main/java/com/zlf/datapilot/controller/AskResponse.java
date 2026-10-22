@@ -37,6 +37,9 @@ public class AskResponse {
     private String chartType;
     private String reportHtml;
 
+    /** 本轮是「要一份完整报告」（沿用上一轮问题），前端据此把报告面板默认展开（Ticket 22） */
+    private boolean reportRequested;
+
     /**
      * 结果分析（Ticket 21）：{@code findings} 是「这些数说明了什么」，{@code gaps} 是
      * 「问题要求了但这次取数覆盖不到的部分」。
@@ -203,6 +206,14 @@ public class AskResponse {
 
     public void setReportHtml(String reportHtml) {
         this.reportHtml = reportHtml;
+    }
+
+    public boolean isReportRequested() {
+        return reportRequested;
+    }
+
+    public void setReportRequested(boolean reportRequested) {
+        this.reportRequested = reportRequested;
     }
 
     public Analysis getAnalysis() {

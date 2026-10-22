@@ -75,6 +75,13 @@ public class ReportStep implements AgentStep {
             "font-size:12px;overflow:auto;white-space:pre-wrap}",
             "details{margin-top:8px}",
             "summary{cursor:pointer;color:#3370ff;font-size:13px}",
+            // 结论区（Ticket 22）
+            ".verdict{background:#f2f6ff;border-left:4px solid #3370ff;border-radius:0 8px 8px 0;",
+            "padding:12px 14px;font-size:14px;line-height:1.7;margin:4px 0 14px}",
+            "ol.findings{margin:0 0 6px;padding-left:22px;font-size:13px;line-height:1.85}",
+            ".gap{margin-top:10px;background:#fff8e6;border:1px solid #ffd88a;border-radius:8px;",
+            "padding:10px 14px;font-size:12.5px;line-height:1.7;color:#6b4c00}",
+            ".gap ul{margin:6px 0 0;padding-left:18px}",
             ".empty{color:#8a919f;font-size:13px;padding:12px 0}");
 
     private final ObjectMapper objectMapper;
@@ -112,6 +119,10 @@ public class ReportStep implements AgentStep {
                 .append(" · 图表类型 ").append(escapeHtml(chartTypeLabel(chartType)))
                 .append(" · 生成于 ").append(LocalDateTime.now().format(TS)).append("</div>\n");
 
+        // Ticket 22：「完整报告」不能只有图 + 明细 —— 那还是一次查询的回显。
+        // 结论必须排在图表之前：读者先要判断，再看支撑数据；反过来等于让人自己总结。
+        html.append(conclusion(ctx));
+
         // 单指标（单行单列）：不画图，直接给大数字卡片 —— 一根柱子上顶一个数没有信息量
         if ("metric".equals(chartType)) {
             html.append(metricCards(rows));
@@ -132,6 +143,39 @@ public class ReportStep implements AgentStep {
 
     private String title(AgentContext ctx) {
         return ctx.getRewrittenQuestion() == null ? ctx.getUserQuestion() : ctx.getRewrittenQuestion();
+    }
+
+    /**
+     * 结论段（Ticket 22）：一句话判断 + 量化结论清单 + 答不了的部分。
+     *
+     * <p>三段都来自 {@code ExplainStep} 已经算好的 {@link com.zlf.datapilot.agent.analysis.Analysis}，
+     * 报告<b>不重新算</b> —— 同一份数据在页面和报告里给出两套数字，是最难排查的一类不一致。
+     * 分析为空时整段不渲染：没有结论就明说没有，不要拿「查询无数据」之外的空标题撑版面。
+     */
+    private String conclusion(AgentContext ctx) {
+        com.zlf.datapilot.agent.analysis.Analysis a = ctx.getAnalysis();
+        if (a == null || a.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        if (!a.summary().isEmpty()) {
+            sb.append("<div class=\"verdict\">").append(escapeHtml(a.summary())).append("</div>\n");
+        }
+        if (!a.findings().isEmpty()) {
+            sb.append("<h4>结论</h4>\n<ol class=\"findings\">");
+            for (String f : a.findings()) {
+                sb.append("<li>").append(escapeHtml(f)).append("</li>");
+            }
+            sb.append("</ol>\n");
+        }
+        if (!a.gaps().isEmpty()) {
+            sb.append("<div class=\"gap\"><b>以下部分本次答不了</b><ul>");
+            for (String g : a.gaps()) {
+                sb.append("<li>").append(escapeHtml(g)).append("</li>");
+            }
+            sb.append("</ul></div>\n");
+        }
+        return sb.toString();
     }
 
     /** 中文名 + 英文标识：英文串用于和 agent_run / trace 里的 chartType 对照排障 */

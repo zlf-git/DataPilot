@@ -89,6 +89,15 @@ public class AgentContext {
     /** 生成的 HTML 报告（P1） */
     private String reportHtml;
 
+    /**
+     * 本轮是「要一份完整报告」而不是一次新提问（Ticket 22）。
+     *
+     * <p>来源：{@code RewriteStep} 识别出纯报告请求（「我需要完整的报告」）后，
+     * 沿用上一轮问题并置 true —— 语义确定（不新增取数条件），只是要求换个呈现方式。
+     * 前端据此把报告面板默认展开，避免用户再点一次。
+     */
+    private boolean reportRequested;
+
     /** 失败信息（任一节点失败时） */
     private String errorMessage;
 
@@ -318,6 +327,14 @@ public class AgentContext {
 
     public void setReportHtml(String reportHtml) {
         this.reportHtml = reportHtml;
+    }
+
+    public boolean isReportRequested() {
+        return reportRequested;
+    }
+
+    public void setReportRequested(boolean reportRequested) {
+        this.reportRequested = reportRequested;
     }
 
     public String getErrorMessage() {

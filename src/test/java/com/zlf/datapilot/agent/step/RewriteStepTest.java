@@ -245,4 +245,43 @@ class RewriteStepTest {
         assertThat(c.getErrorMessage()).contains("当天去重人数");
         assertThat(c.getComparisonDays()).isNull();
     }
+
+    @Test
+    @DisplayName("Ticket 22：「那么我需要完整的报告」= 报告请求，沿用上一轮，不拒绝")
+    void reportRequestReusesLastQuestion() {
+        remember("s1", "10月19日各渠道的GMV是多少", null);
+
+        AgentContext c = ctx("那么我需要完整的报告", "s1");
+        step.execute(c);
+
+        // 这句话本身不含取数语义，此前被判成「换了维度的追问」直接拒绝，
+        // 提示「请把条件说全」—— 条件本来就在上一轮里，属于答非所问
+        assertThat(c.getErrorMessage()).isNull();
+        assertThat(c.getRewrittenQuestion()).isEqualTo("10月19日各渠道的GMV是多少");
+        assertThat(c.isReportRequested()).isTrue();
+    }
+
+    @Test
+    @DisplayName("带完整条件的「报告」请求：不能按报告处理，否则会忽略它自己那句的条件")
+    void reportWithOwnConditionsIsNotTreatedAsFollowUp() {
+        remember("s1", "10月19日各渠道的GMV是多少", null);
+
+        AgentContext c = ctx("近7天各省份GMV的报告", "s1");
+        step.execute(c);
+
+        assertThat(c.getErrorMessage()).isNull();
+        assertThat(c.getRewrittenQuestion()).isEqualTo("近7天各省份GMV的报告");
+        assertThat(c.isReportRequested()).isFalse();
+    }
+
+    @Test
+    @DisplayName("没有上一轮却要报告：拒绝并给出下一步，而不是把这句话丢给模型瞎猜")
+    void reportRequestWithoutHistoryIsRejected() {
+        AgentContext c = ctx("我需要完整的报告", null);
+        step.execute(c);
+
+        assertThat(c.getErrorMessage()).contains("先问一个具体问题");
+        assertThat(c.getRejectedBy()).isEqualTo("rewrite");
+        assertThat(c.isReportRequested()).isFalse();
+    }
 }
