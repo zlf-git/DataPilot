@@ -4,6 +4,7 @@ import com.zlf.datapilot.agent.AgentContext;
 import com.zlf.datapilot.agent.AgentStep;
 import com.zlf.datapilot.agent.analysis.Analysis;
 import com.zlf.datapilot.agent.analysis.ResultAnalyzer;
+import com.zlf.datapilot.knowledge.OntologyCache;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -30,9 +31,11 @@ public class ExplainStep implements AgentStep {
     private static final int MAX_LISTED_ROWS = 5;
 
     private final ResultAnalyzer resultAnalyzer;
+    private final OntologyCache ontologyCache;
 
-    public ExplainStep(ResultAnalyzer resultAnalyzer) {
+    public ExplainStep(ResultAnalyzer resultAnalyzer, OntologyCache ontologyCache) {
         this.resultAnalyzer = resultAnalyzer;
+        this.ontologyCache = ontologyCache;
     }
 
     @Override
@@ -46,11 +49,14 @@ public class ExplainStep implements AgentStep {
         ctx.setChartType(chartType(rows));
         boolean answerFilled = ctx.getAnswer() != null && !ctx.getAnswer().isBlank();
         // 分析独立于 answer：即使 answer 已被结果自检/环比填过，结论与缺口照样要算。
-        // 指标中文名从召回的 metric_def 里取，取不到就显示 metricId，不猜语义。
+        // 指标中文名优先用召回结果，取不到再查全量字典 —— 召回是字面匹配，模型选中的指标
+        // 未必出现在问题字面上（「占大盘比」对不上指标名「渠道GMV占比」），
+        // 只靠召回会让结论里露出英文 ID。展示名不该由召回策略决定。
         Analysis analysis = resultAnalyzer.analyze(
                 rows,
                 ctx.getIr(),
                 ctx.getRecalledMetadata() == null ? null : ctx.getRecalledMetadata().getMetrics(),
+                ontologyCache.metricDefs(),
                 ctx.getUserQuestion());
         ctx.setAnalysis(analysis);
         if (!answerFilled) {

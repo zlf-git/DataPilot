@@ -59,6 +59,19 @@ public class OntologyCache {
         return snapshot().metricIds;
     }
 
+    /**
+     * 指标全量定义（metric_id → MetricDef），用于<b>展示</b>层面的中文名与口径回填。
+     *
+     * <p>为什么不能只靠召回结果：召回是按「问题里出现了指标名」字面匹配的，
+     * 问「各渠道 GMV、占大盘比、日均产出」时，指标名「渠道GMV占比」并不是问题的子串，
+     * 于是这三个指标压根不在召回列表里 —— 模型仍能凭 prompt 里的清单答对，
+     * 但分析层拿不到中文名，结论里就只能露出 {@code gmv_channel_ratio} 这种英文 ID。
+     * 展示用的名字不该由召回策略决定，所以这里给全量。
+     */
+    public Map<String, MetricDef> metricDefs() {
+        return snapshot().metricDefs;
+    }
+
     /** 指标 → 主关联表映射（存在性/权限闸门推导表用，不落库） */
     public Map<String, String> metricTables() {
         return snapshot().metricTables;
@@ -126,12 +139,16 @@ public class OntologyCache {
                     .collect(Collectors.toSet());
             Map<String, String> metricTables = new HashMap<>();
             Map<String, String> metricDenominatorTables = new HashMap<>();
+            Map<String, MetricDef> metricDefs = new HashMap<>();
             for (MetricDef m : metrics) {
                 if (m.getMetricId() != null && m.getTableName() != null) {
                     metricTables.put(m.getMetricId(), m.getTableName());
                 }
                 if (m.getMetricId() != null && m.getDenominatorTable() != null && !m.getDenominatorTable().isBlank()) {
                     metricDenominatorTables.put(m.getMetricId(), m.getDenominatorTable().trim());
+                }
+                if (m.getMetricId() != null) {
+                    metricDefs.put(m.getMetricId().trim().toLowerCase(java.util.Locale.ROOT), m);
                 }
             }
 
@@ -154,7 +171,7 @@ public class OntologyCache {
             }
 
             return new Snapshot(tables, fieldNames, metricIds, metricTables, metricDenominatorTables, tableFields,
-                    gateThresholds, dimensionTables);
+                    gateThresholds, dimensionTables, metricDefs);
         } catch (DataAccessException e) {
             log.warn("白名单加载失败，返回空快照（fail-closed 拒绝一切）：{}", e.getMessage());
             return Snapshot.empty();
@@ -170,10 +187,12 @@ public class OntologyCache {
             Map<String, String> metricDenominatorTables,
             Set<String> tableFields,
             Map<String, Integer> gateThresholds,
-            Map<String, Set<String>> dimensionTables) {
+            Map<String, Set<String>> dimensionTables,
+            Map<String, MetricDef> metricDefs) {
 
         static Snapshot empty() {
-            return new Snapshot(Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Set.of(), Map.of(), Map.of());
+            return new Snapshot(Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Set.of(), Map.of(), Map.of(),
+                    Map.of());
         }
     }
 }

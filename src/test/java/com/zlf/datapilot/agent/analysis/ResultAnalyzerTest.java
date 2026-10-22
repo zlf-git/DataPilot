@@ -306,4 +306,142 @@ class ResultAnalyzerTest {
 
         assertThat(a.findings()).hasSizeLessThanOrEqualTo(6);
     }
+
+    // ------------------------------------------------------------ Ticket 23：按口径分开算
+
+    private static final List<MetricDef> CHANNEL_DEFS = List.of(
+            metric("gmv_channel", "渠道GMV", "SUM(gmv)"),
+            metric("gmv_channel_ratio", "占大盘比", "SUM(gmv) / SUM(total_gmv)"),
+            metric("gmv_channel_daily_avg", "日均产出", "SUM(gmv) / COUNT(dt)"));
+
+    /** 三渠道：GMV 1000/600/400，占比 50%/30%/20%，日均 200/150/100 */
+    private static List<Map<String, Object>> threeChannels() {
+        return List.of(
+                row("channel_name", "APP", "gmv_channel", 1000, "gmv_channel_ratio", 0.5,
+                        "gmv_channel_daily_avg", 200),
+                row("channel_name", "网页", "gmv_channel", 600, "gmv_channel_ratio", 0.3,
+                        "gmv_channel_daily_avg", 150),
+                row("channel_name", "小程序", "gmv_channel", 400, "gmv_channel_ratio", 0.2,
+                        "gmv_channel_daily_avg", 100));
+    }
+
+    @Test
+    @DisplayName("比例列不参与份额对照：拿「占大盘比」和 GMV 比份额，差额恒为 0.0pp")
+    void ratioColumnIsNotComparedWithAmount() {
+        Analysis a = analyzer.analyze(threeChannels(),
+                irOf("gmv_channel", "gmv_channel_ratio", "gmv_channel_daily_avg"),
+                CHANNEL_DEFS, "近7天各渠道累计GMV、占大盘比、日均产出是多少？");
+
+        // 关键回归：曾经的输出是「最大差 0.0 个百分点」——正确但零信息
+        assertThat(a.findings()).noneMatch(f -> f.contains("份额对照"));
+        assertThat(a.summary()).doesNotContain("结构基本一致");
+        // 比例列自己出结论：读值 + 横向高低
+        assertThat(a.findings()).anyMatch(f -> f.startsWith("占大盘比：APP 50.0%"));
+        assertThat(a.findings()).anyMatch(f -> f.contains("各项合计 100.0%"));
+        assertThat(a.findings()).anyMatch(f -> f.contains("相差 30.0 个百分点"));
+        assertThat(a.summary()).contains("占大盘比以 APP 的 50.0% 居首");
+        // 已经取回了「占比」列，就不能再挂「没有大盘口径」的提示 —— 那是自相矛盾
+        assertThat(a.gaps()).noneMatch(g -> g.contains("大盘口径"));
+    }
+
+    @Test
+    @DisplayName("均值列必须出现在结论里：日均产出取到了就不能被静默丢掉")
+    void averageColumnIsNeverDropped() {
+        Analysis a = analyzer.analyze(threeChannels(),
+                irOf("gmv_channel", "gmv_channel_ratio", "gmv_channel_daily_avg"),
+                CHANNEL_DEFS, "近7天各渠道累计GMV、占大盘比、日均产出是多少？");
+
+        // 曾经的输出里这条完全不存在：gmv_channel_daily_avg 取到了，却一条结论都没有
+        assertThat(a.findings()).anyMatch(f -> f.startsWith("日均产出：APP 200"));
+        assertThat(a.findings()).anyMatch(f -> f.contains("3 项均值 150"));
+        assertThat(a.findings()).anyMatch(f -> f.contains("APP 高于这几项均值 33.3%"));
+        // 均值不能求和：日均相加不是期间总量
+        assertThat(a.findings()).noneMatch(f -> f.contains("日均产出合计"));
+        // 参照系必须说清是「这几项均值」，不能含糊成大盘
+        assertThat(a.findings().toString()).doesNotContain("大盘均值");
+    }
+
+    @Test
+    @DisplayName("假设推演必须显式说明答不了：否则用户会把「各渠道 GMV」当成「故障损失」")
+    void whatIfQuestionIsDeclaredUnanswerable() {
+        Analysis a = analyzer.analyze(threeChannels(),
+                irOf("gmv_channel"), CHANNEL_DEFS,
+                "近7天各渠道累计GMV是多少？如果某一渠道当天故障，会损失多少GMV？");
+
+        assertThat(a.gaps()).anyMatch(g -> g.contains("情景推演")).anyMatch(g -> g.contains("不做假设模拟"));
+    }
+
+    @Test
+    @DisplayName("口径判定：只看最外层除号，SUM(a/b) 仍是可加和量值")
+    void kindsAreDetectedConservatively() {
+        assertThat(ResultAnalyzer.hasTopLevelDivide("SUM(gmv) / SUM(total_gmv)")).isTrue();
+        // 括号内的除法：整列仍然可加和，不能当比例
+        assertThat(ResultAnalyzer.hasTopLevelDivide("SUM(gmv / total)")).isFalse();
+        assertThat(ResultAnalyzer.hasTopLevelDivide("SUM(total_gmv)")).isFalse();
+        assertThat(ResultAnalyzer.hasTopLevelDivide(null)).isFalse();
+
+        // 判不出来一律当 SUM：猜成比例会让本该有合计的量值失去合计
+        Analysis unknown = analyzer.analyze(
+                List.of(row("name", "a", "mystery_metric", 10), row("name", "b", "mystery_metric", 30)),
+                null, List.of(), "各品类情况");
+        assertThat(unknown.findings()).anyMatch(f -> f.contains("合计 40"));
+    }
+
+    @Test
+    @DisplayName("avg 优先于除号：日均产出的口径 SUM(gmv)/COUNT(dt) 是均值，不是百分比")
+    void averageWinsOverSlash() {
+        // 若按「有除号就是比例」判，日均 200 会被格式化成 20000.0%（实测踩到）
+        Analysis a = analyzer.analyze(threeChannels(),
+                irOf("gmv_channel_daily_avg"), CHANNEL_DEFS,
+                "各渠道日均产出是多少");
+
+        assertThat(a.findings()).anyMatch(f -> f.startsWith("日均产出：APP 200，"));
+        assertThat(a.findings().toString()).doesNotContain("20000.0%");
+    }
+
+    @Test
+    @DisplayName("并列第一必须说出来：APP 与小程序都是 10.0% 时不能只说 APP 居首")
+    void tieAtTopIsReported() {
+        List<Map<String, Object>> rows = List.of(
+                row("channel_name", "APP", "pay_conversion_rate", 0.10),
+                row("channel_name", "小程序", "pay_conversion_rate", 0.10),
+                row("channel_name", "网页", "pay_conversion_rate", 0.075));
+        Analysis a = analyzer.analyze(rows, null,
+                List.of(metric("pay_conversion_rate", "支付转化率", "SUM(paid) / SUM(ord)")), "各渠道支付转化率");
+
+        assertThat(a.summary()).contains("APP、小程序 并列居首").contains("网页最低");
+        assertThat(a.findings()).anyMatch(f -> f.contains("最高 APP、小程序 并列"));
+    }
+
+    @Test
+    @DisplayName("全部相等时不说「最高 X、最低 Y，相差 0.0 个百分点」这种自相矛盾的话")
+    void allEqualAvoidsMaxMinSentence() {
+        List<Map<String, Object>> rows = List.of(
+                row("channel_name", "APP", "pay_conversion_rate", 0.10),
+                row("channel_name", "网页", "pay_conversion_rate", 0.10));
+        Analysis a = analyzer.analyze(rows, null,
+                List.of(metric("pay_conversion_rate", "支付转化率", "SUM(paid) / SUM(ord)")), "各渠道支付转化率");
+
+        assertThat(a.summary()).contains("各项均为 10.0%");
+        assertThat(a.findings()).noneMatch(f -> f.contains("相差 0.0 个百分点"));
+    }
+
+    @Test
+    @DisplayName("中文名兜底：召回列表为空时查全量字典，结论里不露英文 metricId")
+    void fallsBackToGlobalDictForDisplayName() {
+        // 实测场景：问「各渠道 GMV、占大盘比、日均产出」，指标名「渠道GMV占比」不是问题子串，
+        // 召回列表里压根没有它 —— 但模型答对了，结论里却只能显示 gmv_channel_ratio
+        Map<String, MetricDef> all = Map.of(
+                "gmv_channel", metric("gmv_channel", "渠道GMV", "SUM(gmv)"),
+                "gmv_channel_ratio", metric("gmv_channel_ratio", "渠道GMV占比", "SUM(gmv)"),
+                "gmv_channel_daily_avg", metric("gmv_channel_daily_avg", "渠道日均GMV", "SUM(gmv)/COUNT(dt)"));
+
+        Analysis a = analyzer.analyze(threeChannels(),
+                irOf("gmv_channel", "gmv_channel_ratio", "gmv_channel_daily_avg"),
+                List.of(), all, "近7天各渠道累计GMV、占大盘比、日均产出是多少？");
+
+        assertThat(a.findings()).anyMatch(f -> f.startsWith("渠道GMV占比：APP 50.0%"));
+        assertThat(a.findings()).anyMatch(f -> f.startsWith("渠道日均GMV：APP 200"));
+        assertThat(a.findings().toString()).doesNotContain("gmv_channel_daily_avg");
+    }
 }

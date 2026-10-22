@@ -19,16 +19,22 @@ import java.util.Set;
  * {@code gmv_channel_daily_avg} 写成 {@code gmv_channel_avg_daily}（daily 与 avg 顺序颠倒）。
  * 这类错误被存在性闸门整题拒绝，用户看到的是「指标不存在」，连本来能答的部分也一起丢掉。
  *
- * <p><b>策略刻意收得极窄</b>：只纠正「同一组词、只是顺序不同」的情形 ——
+ * <p><b>策略刻意收得极窄</b>：只纠正「同一组词、只是顺序不同或词形不同」的情形 ——
  * 把 ID 按 {@code _} 拆成词集合，词集合完全相等且候选唯一时才替换。
  * <ul>
  *   <li>{@code gmv_channel_avg_daily} → 词集 {gmv,channel,avg,daily} 唯一对应
- *       {@code gmv_channel_daily_avg} → 纠正</li>
+ *       {@code gmv_channel_daily_avg} → 纠正（词序）</li>
+ *   <li>{@code gmv_channel_avg_day} → 词集 {gmv,channel,avg,day} 经词形归一
+ *       （day≡daily）后同样唯一对应 {@code gmv_channel_daily_avg} → 纠正（词形）</li>
  *   <li>{@code gmv} → 词集 {gmv} 在白名单里找不到单词 ID → <b>不纠正</b>，
  *       原样交给闸门拒绝</li>
  * </ul>
  *
- * <p><b>绝不做的三件事</b>：不比编辑距离、不做前缀/子串匹配、不做同义词替换。
+ * <p><b>词形归并表刻意只收「同一个词的缩写/形态」</b>（{@link #SYNONYMS}），
+ * 不收任何「意思接近」的词：{@code total} 与 {@code sum}、{@code gmv} 与
+ * {@code amount} 都可能对应库里两个不同的指标，合并就会猜错。
+ *
+ * <p><b>绝不做的三件事</b>：不比编辑距离、不做前缀/子串匹配、不做跨概念同义词替换。
  * 那三种都会把 {@code gmv} 猜成 {@code gmv_total} 或 {@code gmv_channel}，
  * 属于「模型没说，系统替它编一个」——伪造语义比拒绝回答更危险。
  * 本项目「绝不猜一个答」的约束（QA-03 P2-1）在这里继续成立。
@@ -40,6 +46,27 @@ import java.util.Set;
 public class MetricIdNormalizer {
 
     private static final Logger log = LoggerFactory.getLogger(MetricIdNormalizer.class);
+
+    /**
+     * 词形归并表：只收「同一个词的缩写或形态变化」，用于把模型写出的变体折回白名单用词。
+     *
+     * <p>准入标准是「两者在库里绝不可能指两个不同指标」。所以只收：
+     * <ul>
+     *   <li>{@code daily} / {@code day} —— 形容词与名词形态；</li>
+     *   <li>{@code average} / {@code mean} → {@code avg} —— 全称与缩写；</li>
+     *   <li>{@code count} → {@code cnt}，{@code number} → {@code num} —— 全称与缩写。</li>
+     * </ul>
+     *
+     * <p>刻意<b>不收</b>：{@code total}↔{@code sum}（库里可能真有 total_gmv 与 sum_gmv 两个口径）、
+     * {@code gmv}↔{@code amount}↔{@code revenue}（跨概念）、{@code qty}↔{@code cnt}
+     * （数量口径可能是件数也可能是单数）。这些合并就是把两个指标当同一个，会静默错数。
+     */
+    private static final java.util.Map<String, String> SYNONYMS = java.util.Map.of(
+            "daily", "day",
+            "average", "avg",
+            "mean", "avg",
+            "count", "cnt",
+            "number", "num");
 
     private final OntologyCache cache;
 
@@ -74,10 +101,10 @@ public class MetricIdNormalizer {
                 if (!matched.equals(raw)) {
                     ref.setMetricId(matched);
                     if (!matched.equals(normalized)) {
-                        // 只有「词序被改」才算纠正，改大小写不算
+                        // 只有「词序/词形被改」才算纠正，改大小写不算
                         String note = normalized + " -> " + matched;
                         corrections.add(note);
-                        log.warn("指标 ID 词序归一：{}（模型输出的 ID 不在白名单，按同词集唯一候选纠正；"
+                        log.warn("指标 ID 归一：{}（模型输出的 ID 不在白名单，按同词集唯一候选纠正；"
                                 + "若这是语义误选，闸门不会再拦，请回放 trace 复核）", note);
                     }
                 }
@@ -112,16 +139,20 @@ public class MetricIdNormalizer {
         return candidates.size() == 1 ? candidates.iterator().next() : null;
     }
 
-    /** 词集签名：按 {@code _} 拆词、去掉空段、排序后拼回。{@code a_b_c} 与 {@code a_c_b} 得到同一签名 */
+    /**
+     * 词集签名：按 {@code _} 拆词 → 词形归并（{@link #SYNONYMS}）→ 去空段 → 排序 → 拼回。
+     * {@code a_b_c} 与 {@code a_c_b} 得到同一签名；{@code x_daily_avg} 与 {@code x_avg_day} 也是。
+     */
     private static String signature(String id) {
         if (id == null) {
             return "";
         }
         List<String> words = new ArrayList<>();
         for (String part : id.toLowerCase(Locale.ROOT).split("_")) {
-            if (!part.isBlank()) {
-                words.add(part);
+            if (part.isBlank()) {
+                continue;
             }
+            words.add(SYNONYMS.getOrDefault(part, part));
         }
         if (words.isEmpty()) {
             return "";

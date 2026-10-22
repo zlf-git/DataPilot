@@ -2,6 +2,7 @@ package com.zlf.datapilot.agent.step;
 
 import com.zlf.datapilot.agent.AgentContext;
 import com.zlf.datapilot.agent.analysis.ResultAnalyzer;
+import com.zlf.datapilot.knowledge.OntologyCache;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * ExplainStep 单测（Ticket 11）：图表类型按形状判定 + 答案不被覆盖。
@@ -23,7 +26,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ExplainStepTest {
 
-    private final ExplainStep step = new ExplainStep(new ResultAnalyzer());
+    // 全量指标字典用空替身：这组用例只关心图表形状与 answer，中文名映射有独立用例覆盖
+    private final ExplainStep step = new ExplainStep(new ResultAnalyzer(), emptyOntologyCache());
+
+    private static OntologyCache emptyOntologyCache() {
+        OntologyCache cache = mock(OntologyCache.class);
+        when(cache.metricDefs()).thenReturn(java.util.Map.of());
+        return cache;
+    }
 
     private static AgentContext ctx(List<Map<String, Object>> rows) {
         AgentContext c = new AgentContext();

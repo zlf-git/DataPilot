@@ -28,8 +28,12 @@ class MetricIdNormalizerTest {
             "gmv_channel_daily_avg", "paid_order_cnt", "avg_order_value"));
 
     private MetricIdNormalizer normalizer() {
+        return normalizer(WHITELIST);
+    }
+
+    private MetricIdNormalizer normalizer(Set<String> ids) {
         OntologyCache cache = mock(OntologyCache.class);
-        when(cache.metricIds()).thenReturn(WHITELIST);
+        when(cache.metricIds()).thenReturn(ids);
         return new MetricIdNormalizer(cache);
     }
 
@@ -67,6 +71,45 @@ class MetricIdNormalizerTest {
 
         assertThat(ir.getMetrics().get(0).getMetricId()).isEqualTo("gmv_channel_daily_avg");
         assertThat(corrections).containsExactly("gmv_channel_avg_daily -> gmv_channel_daily_avg");
+    }
+
+    @Test
+    @DisplayName("词形变体：daily 被写成 day 且词序也反了，仍纠正（截图里的真实错误）")
+    void fixesWordFormVariant() {
+        // 用户截图原样：近 7 天各渠道累计GMV / 占大盘比 / 日均产出 →
+        // 模型输出 gmv_channel_avg_day，白名单里是 gmv_channel_daily_avg
+        QueryIr ir = irOf("gmv_channel_avg_day");
+
+        List<String> corrections = normalizer().normalize(ir);
+
+        assertThat(ir.getMetrics().get(0).getMetricId()).isEqualTo("gmv_channel_daily_avg");
+        assertThat(corrections).containsExactly("gmv_channel_avg_day -> gmv_channel_daily_avg");
+    }
+
+    @Test
+    @DisplayName("跨概念词不合并：amount 不许被当成 gmv，sum 不许被当成 total")
+    void doesNotMergeDifferentConcepts() {
+        // 库里 total/sum、gmv/amount 都可能各有一个指标，合并就是静默错数
+        QueryIr ir = irOf("gmv_channel_amount", "gmv_sum");
+
+        List<String> corrections = normalizer().normalize(ir);
+
+        assertThat(corrections).isEmpty();
+        assertThat(ir.getMetrics()).extracting(MetricRef::getMetricId)
+                .containsExactly("gmv_channel_amount", "gmv_sum");
+    }
+
+    @Test
+    @DisplayName("词形归并后出现多候选：不猜，交回闸门拒绝")
+    void ambiguousWordFormIsNotGuessed() {
+        // 白名单里真有两个只差词序的合法指标时，系统没有依据选谁
+        Set<String> both = new LinkedHashSet<>(List.of("gmv_daily_avg", "gmv_avg_day"));
+        QueryIr ir = irOf("gmv_day_avg");
+
+        List<String> corrections = normalizer(both).normalize(ir);
+
+        assertThat(corrections).isEmpty();
+        assertThat(ir.getMetrics().get(0).getMetricId()).isEqualTo("gmv_day_avg");
     }
 
     @Test
