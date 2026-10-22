@@ -183,7 +183,10 @@ class EngineSwitchTest {
             List<Map<String, Object>> rows =
                     ex.query(SqlCommand.of("SELECT COUNT(*) AS cnt FROM ads_trade_overview_di", List.of()));
             assertThat(rows).hasSize(1);
-            assertThat(((Number) rows.get(0).get("cnt")).longValue()).isEqualTo(7L);
+            // 只断言「能连上真库并读出数」，不锁死具体行数：
+            // 这张表按 dt 分区，历史数据会随造数/回刷增长（2026-10-22 造数后 7 天变 8 天），
+            // 写死 7L 会让「数据变多」被误判成引擎坏了。
+            assertThat(((Number) rows.get(0).get("cnt")).longValue()).isGreaterThanOrEqualTo(7L);
         });
     }
 

@@ -218,8 +218,23 @@ class IrToSqlConverterTest {
     }
 
     @Test
-    @DisplayName("多指标：显式拒绝（Ticket 05 只做单指标）")
-    void multipleMetricsRejected() {
+    @DisplayName("多指标：同表可合并成一条 SQL（Ticket 20）")
+    void multipleMetricsSameTable() {
+        // 两个指标同属渠道表：一个 simple、一个 composite，顺便验证复合指标也能并存
+        QueryIr ir = agg("gmv_channel", null);
+        MetricRef second = new MetricRef();
+        second.setMetricId("pay_conversion_rate");
+        ir.setMetrics(new ArrayList<>(List.of(ir.getMetrics().get(0), second)));
+
+        SqlCommand cmd = converter.convert(ir);
+        assertThat(cmd.sql()).contains("AS gmv_channel").contains("AS pay_conversion_rate");
+        // 只查一次表，不能因为多指标就变成多次查询
+        assertThat(cmd.sql()).containsOnlyOnce("FROM ads_channel_conversion_di");
+    }
+
+    @Test
+    @DisplayName("多指标：跨表仍然显式拒绝（IR 没有 JOIN 声明）")
+    void multipleMetricsCrossTableRejected() {
         QueryIr ir = agg("gmv_total", null);
         MetricRef second = new MetricRef();
         second.setMetricId("gmv_channel");
@@ -227,7 +242,7 @@ class IrToSqlConverterTest {
 
         assertThatThrownBy(() -> converter.convert(ir))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("多指标暂不支持");
+                .hasMessageContaining("多指标必须来自同一张表");
     }
 
     // ---------------- 夹具 ----------------

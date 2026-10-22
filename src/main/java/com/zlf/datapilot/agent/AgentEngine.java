@@ -19,6 +19,7 @@ import com.zlf.datapilot.agent.trace.TraceSpan;
 import com.zlf.datapilot.agent.trace.TraceStep;
 import com.zlf.datapilot.ir.QueryIr;
 import com.zlf.datapilot.ir.TimeRange;
+import com.zlf.datapilot.knowledge.MetricIdNormalizer;
 import com.zlf.datapilot.llm.LlmClient;
 import com.zlf.datapilot.llm.LlmGeneration;
 import com.zlf.datapilot.sql.IrToSqlConverter;
@@ -58,6 +59,7 @@ public class AgentEngine {
     private final TraceRecorder traceRecorder;
     private final SessionStore sessions;
     private final PreviewStore previews;
+    private final MetricIdNormalizer metricIdNormalizer;
 
     public AgentEngine(RewriteStep rewriteStep,
                        RecallStep recallStep,
@@ -70,7 +72,8 @@ public class AgentEngine {
                        ReportStep reportStep,
                        TraceRecorder traceRecorder,
                        SessionStore sessions,
-                       PreviewStore previews) {
+                       PreviewStore previews,
+                       MetricIdNormalizer metricIdNormalizer) {
         this.rewriteStep = rewriteStep;
         this.recallStep = recallStep;
         this.promptBuildStep = promptBuildStep;
@@ -83,6 +86,7 @@ public class AgentEngine {
         this.traceRecorder = traceRecorder;
         this.sessions = sessions;
         this.previews = previews;
+        this.metricIdNormalizer = metricIdNormalizer;
     }
 
     /** LLM span 的输出摘要：IR 形状比 IR 全文有用（全文进 input/output 会把 TEXT 列灌满） */
@@ -185,6 +189,11 @@ public class AgentEngine {
             return ctx;
         }
         ctx.setIr(ir);
+        // 指标 ID 词序归一（Ticket 20）：必须在闸门之前 —— 长 ID 被模型写反顺序时，
+        // 存在性闸门会整题拒绝，连本来能答的部分一起丢。纠正范围极窄（同词集唯一候选），
+        // 只调顺序不猜语义，纠正记录走 warn 日志可回放。
+        trace.span(TraceSpan.GATE_IR, "metricId 归一",
+                () -> metricIdNormalizer.normalize(ir), c -> "corrections=" + c);
         // 完全空 IR（既无指标也无维度）→ 无法识别；仅 metrics 空的明细查询交给闸门/后续 ticket 处理
         boolean noMetrics = ir.getMetrics() == null || ir.getMetrics().isEmpty();
         boolean noDims = ir.getDimensions() == null || ir.getDimensions().isEmpty();

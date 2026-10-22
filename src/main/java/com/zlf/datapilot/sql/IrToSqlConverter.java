@@ -82,6 +82,15 @@ public class IrToSqlConverter {
 
     private static final int DEFAULT_MAX_ROWS = 1000;
 
+    /**
+     * 单次 AGG 最多接受的指标数（Ticket 20）。
+     *
+     * <p>放宽「只允许 1 个指标」是为了让「累计GMV + 占比 + 日均产出」这类复合问法有出口，
+     * 但复合指标每个都可能带一段分母子查询，指标越多 SQL 越长、代价越高。
+     * 5 是经验上限：超过这个数说明问题本身该拆开问，而不是继续堆 SELECT 列。
+     */
+    private static final int MAX_METRICS = 5;
+
     /** 时间字段（窗口锚定的列） */
     private static final String DT_FIELD = "dt";
 
@@ -115,8 +124,14 @@ public class IrToSqlConverter {
                             + "同一语义不允许存在两套执行路径");
         }
         if (ir.getMetrics() != null && ir.getMetrics().size() > 1) {
-            throw new IllegalArgumentException(
-                    "多指标暂不支持（Ticket 05 只做单指标的复合计算）：当前 " + ir.getMetrics().size() + " 个");
+            // 多指标本身是合法需求（「累计GMV + 占比 + 日均」），但必须同表：
+            // IR 没有 JOIN 声明，跨表取数只能靠隐式 JOIN，行数与口径都不可控。
+            // 真正的同表校验在 buildAgg 里做（要先解析 metric 才知道表名），这里只挡明显超限的规模。
+            if (ir.getMetrics().size() > MAX_METRICS) {
+                throw new IllegalArgumentException(
+                        "一次最多查询 " + MAX_METRICS + " 个指标：当前 " + ir.getMetrics().size()
+                                + " 个。请拆成多次查询，或删掉不需要的指标");
+            }
         }
 
         SelectMode mode = resolveMode(ir);
@@ -138,22 +153,34 @@ public class IrToSqlConverter {
         if (ir.getMetrics() == null || ir.getMetrics().isEmpty()) {
             throw new IllegalArgumentException("AGG 聚合模式必须指定指标（Ticket 03）");
         }
-        MetricRef metricRef = ir.getMetrics().get(0);
-        requireIdentifier(metricRef.getMetricId(), "metricId");
-        // 指标 ID 统一小写（metric_def.metric_id 全小写），别名也用同一套真值，避免 ORDER BY 对不上
-        String metricId = metricRef.getMetricId().trim().toLowerCase(java.util.Locale.ROOT);
 
-        MetricDef metric = repo.findByMetricId(metricId);
-        if (metric == null) {
-            throw new IllegalArgumentException("指标不存在: " + metricId);
-        }
-        String metricSql = metric.getMetricSql();
-        if (metricSql == null || metricSql.isBlank()) {
-            throw new IllegalArgumentException("指标 " + metricId + " 缺少 metric_sql");
-        }
-        String tableName = metric.getTableName();
-        if (tableName == null || tableName.isBlank()) {
-            throw new IllegalArgumentException("指标 " + metricId + " 缺少 table_name");
+        // 指标解析（Ticket 20 多指标）：逐个解析，并要求全部落在同一张表。
+        // 跨表多指标需要 JOIN，而 IR 里没有 JOIN 声明 —— 放开等于让隐式 JOIN 决定口径，
+        // 与「跨表维度请拆成两次查询」是同一条约束，这里保持一致的严格度。
+        List<MetricDef> metricDefs = new ArrayList<>(ir.getMetrics().size());
+        String tableName = null;
+        for (MetricRef ref : ir.getMetrics()) {
+            requireIdentifier(ref.getMetricId(), "metricId");
+            // 指标 ID 统一小写（metric_def.metric_id 全小写），别名也用同一套真值，避免 ORDER BY 对不上
+            String mid = ref.getMetricId().trim().toLowerCase(java.util.Locale.ROOT);
+            MetricDef m = repo.findByMetricId(mid);
+            if (m == null) {
+                throw new IllegalArgumentException("指标不存在: " + mid);
+            }
+            if (m.getMetricSql() == null || m.getMetricSql().isBlank()) {
+                throw new IllegalArgumentException("指标 " + mid + " 缺少 metric_sql");
+            }
+            String t = m.getTableName();
+            if (t == null || t.isBlank()) {
+                throw new IllegalArgumentException("指标 " + mid + " 缺少 table_name");
+            }
+            if (tableName == null) {
+                tableName = t;
+            } else if (!tableName.equals(t)) {
+                throw new IllegalArgumentException("多指标必须来自同一张表（IR 没有 JOIN 声明）：指标 " + mid
+                        + " 在 " + t + "，而本次查询已锁定 " + tableName + "；跨表请拆成两次查询");
+            }
+            metricDefs.add(m);
         }
 
         List<DimensionRef> dims = safeDimensions(ir);
@@ -168,10 +195,16 @@ public class IrToSqlConverter {
 
         List<Object> params = new ArrayList<>();
         List<String> selectItems = new ArrayList<>(dimFields);
-        String metricExpr = isComposite(metric)
-                ? buildCompositeExpr(metric, ir, tableName, time, params)
-                : metricSql;
-        selectItems.add(metricExpr + " AS " + metricId);
+        // 排序允许集：分组维度字段 + 本 IR 全部指标别名（ORDER BY 别名是聚合查询的标准写法）
+        Set<String> sortable = new LinkedHashSet<>(dimFields);
+        for (MetricDef metric : metricDefs) {
+            String metricId = metric.getMetricId().trim().toLowerCase(java.util.Locale.ROOT);
+            String metricExpr = isComposite(metric)
+                    ? buildCompositeExpr(metric, ir, tableName, time, params)
+                    : metric.getMetricSql();
+            selectItems.add(metricExpr + " AS " + metricId);
+            sortable.add(metricId);
+        }
 
         WhereClause where = buildWhere(ir, time);
         StringBuilder sql = new StringBuilder("SELECT ")
@@ -182,9 +215,6 @@ public class IrToSqlConverter {
             sql.append(" GROUP BY ").append(String.join(", ", dimFields));
         }
 
-        // 排序允许集：分组维度字段 + 本 IR 的指标别名（ORDER BY 别名是聚合查询的标准写法）
-        Set<String> sortable = new LinkedHashSet<>(dimFields);
-        sortable.add(metricId);
         // 维度字段作 tie-breaker：Q6 这类「转化率并列」的场景单键排序行序不稳定，06b 无从对拍（QA-03 P2-3）
         appendOrderBy(sql, ir.getOrderBy(), sortable, dimFields);
         appendLimit(sql, ir);
